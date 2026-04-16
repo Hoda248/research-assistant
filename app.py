@@ -106,25 +106,16 @@ st.markdown("""
 @st.cache_resource(ttl=300)
 def _init_connection():
     """Private function to safely cache the database connection."""
-    # Try dictionary format first
-    if "db_credentials" in st.secrets:
-        creds = st.secrets["db_credentials"]
-        conn = psycopg2.connect(
-            host=creds["host"],
-            port=creds["port"],
-            database=creds["database"],
-            user=creds["user"],
-            password=creds["password"]
-        )
-    # Fallback to URL format
-    elif "DATABASE_URL" in st.secrets:
-        db_url = st.secrets["DATABASE_URL"]
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-        conn = psycopg2.connect(db_url)
-    else:
-        raise ValueError("No database credentials found in Streamlit Secrets.")
+    if "DATABASE_URL" not in st.secrets:
+        raise ValueError("DATABASE_URL is completely missing from your secrets.toml file.")
         
+    db_url = st.secrets["DATABASE_URL"]
+    
+    # Ensure correct format for psycopg2/SQLAlchemy
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+    conn = psycopg2.connect(db_url)
     conn.set_session(autocommit=True)
     return conn
 
@@ -136,7 +127,7 @@ def get_db():
             raise ValueError("Connection returned None.")
         return conn
     except Exception as e:
-        st.error(f"🔌 **Database connection failed.** Please verify your Supabase credentials in Streamlit Secrets.\n\n*Error details: {e}*")
+        st.error(f"🔌 **Database connection failed.** Please verify your Supabase credentials and ensure your project is not paused.\n\n*Error details: {e}*")
         st.stop()
         raise SystemExit("App halted due to database connection failure.")
 
