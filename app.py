@@ -1,4 +1,3 @@
-
 import streamlit as st
 from Bio import Entrez
 import psycopg2
@@ -104,25 +103,28 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- DATABASE CONNECTION (POSTGRESQL - PRODUCTION READY) ---
-@st.cache_resource(ttl=300) # TTL clears idle connections every 5 mins to align with Supabase Pooler
+@st.cache_resource(ttl=300)
+def _init_connection():
+    """Private function to cache the database connection."""
+    creds = st.secrets["db_credentials"]
+    conn = psycopg2.connect(
+        host=creds["host"],
+        port=creds["port"],
+        database=creds["database"],
+        user=creds["user"],
+        password=creds["password"]
+    )
+    conn.set_session(autocommit=True)
+    return conn
+
 def get_db():
-    """Establish connection to Cloud PostgreSQL securely via Streamlit Secrets."""
+    """Public function to retrieve the connection safely and handle errors."""
     try:
-        db_url = st.secrets["DATABASE_URL"]
-        
-        # SQLAlchemy and newer Psycopg2 require postgresql:// instead of postgres://
-        if db_url.startswith("postgres://"):
-            db_url = db_url.replace("postgres://", "postgresql://", 1)
-            
-        conn = psycopg2.connect(db_url)
-        
-        # Autocommit prevents idle-in-transaction timeouts with connection poolers
-        conn.set_session(autocommit=True)
-        return conn
-        
+        return _init_connection()
     except Exception as e:
-        st.error(f"🔌 **Database connection failed.** Please verify your Supabase Transaction Pooler settings.\n\n*Error details: {e}*")
+        st.error(f"🔌 **Database connection failed.** Please verify your Supabase credentials in Streamlit Secrets.\n\n*Error details: {e}*")
         st.stop()
+        raise SystemExit("App halted due to database connection failure.") # Failsafe if run via standard Python
 
 def init_db():
     conn = get_db()
