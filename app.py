@@ -1,7 +1,6 @@
 import streamlit as st
 from Bio import Entrez
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from supabase import create_client, Client
 from datetime import datetime
 import google.generativeai as genai
 from docx import Document
@@ -102,65 +101,29 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- DATABASE CONNECTION (POSTGRESQL - PRODUCTION READY) ---
-@st.cache_resource(ttl=300)
-def _init_connection():
-    """Private function to safely cache the database connection."""
-    if "DATABASE_URL" not in st.secrets:
-        raise ValueError("DATABASE_URL is completely missing from your secrets.toml file.")
-        
-    db_url = st.secrets["DATABASE_URL"]
-    
-    # Ensure correct format for psycopg2/SQLAlchemy
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-        
-    conn = psycopg2.connect(db_url)
-    conn.set_session(autocommit=True)
-    return conn
+# --- SUPABASE REST API CONNECTION ---
+@st.cache_resource
+def init_connection() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-def get_db():
-    """Public function to catch errors OUTSIDE the Streamlit cache to prevent NoneType crashes."""
-    try:
-        conn = _init_connection()
-        if conn is None:
-            raise ValueError("Connection returned None.")
-        return conn
-    except Exception as e:
-        st.error(f"🔌 **Database connection failed.** Please verify your Supabase credentials and ensure your project is not paused.\n\n*Error details: {e}*")
-        st.stop()
-        raise SystemExit("App halted due to database connection failure.")
-
-def init_db():
-    conn = get_db()
-    with conn.cursor() as c:
-        # Users Table (Stores API keys privately per user)
-        c.execute('''CREATE TABLE IF NOT EXISTS users 
-                     (email VARCHAR(255) PRIMARY KEY, name VARCHAR(255), password_hash VARCHAR(255), keywords TEXT, authors TEXT, api_key TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        # Reading List (Isolated by user_email)
-        c.execute('''CREATE TABLE IF NOT EXISTS reading_list 
-                     (id SERIAL PRIMARY KEY, user_email VARCHAR(255), pmid TEXT, title TEXT, journal TEXT, authors TEXT, date TEXT, notes TEXT, last_edited TEXT)''')
-        # General Notes (Isolated by user_email)
-        c.execute('''CREATE TABLE IF NOT EXISTS general_notes 
-                     (id SERIAL PRIMARY KEY, user_email VARCHAR(255), content TEXT, date TEXT)''')
-        # Audit Logs
-        c.execute('''CREATE TABLE IF NOT EXISTS login_history 
-                     (id SERIAL PRIMARY KEY, user_email VARCHAR(255), login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+try:
+    supabase = init_connection()
+except Exception as e:
+    st.error(f"Failed to connect to Supabase API. Check your SUPABASE_URL and SUPABASE_KEY in secrets. Error: {e}")
+    st.stop()
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 # --- AUTHENTICATION & SESSION MANAGEMENT ---
 def load_user_profile(email):
-    conn = get_db()
-    with conn.cursor(cursor_factory=RealDictCursor) as c:
-        c.execute("SELECT name, email, keywords, authors, api_key FROM users WHERE email=%s", (email,))
-        return c.fetchone()
+    res = supabase.table('users').select('*').eq('email', email).execute()
+    return res.data[0] if res.data else None
 
 def log_audit_trail(email):
-    conn = get_db()
-    with conn.cursor() as c:
-        c.execute("INSERT INTO login_history (user_email) VALUES (%s)", (email,))
+    supabase.table('login_history').insert({'user_email': email}).execute()
 
 # --- AI LOGIC ---
 def get_safe_model():
@@ -198,61 +161,63 @@ def get_summaries(kw_list, author_search, days, logic="OR"):
         query += f"{author_search}[Author]"
     try:
         h = Entrez.esearch(db="pubmed", term=query, retmax=12, reldate=days)
-        ids = Entrez.read(h)["IdList"]; h.close()
+        ids = Entrez.read(h)["IdList"]
+        h.close()
         if not ids: return[]
         h = Entrez.esummary(db="pubmed", id=",".join(ids))
-        res = Entrez.read(h); h.close(); return res
+        res = Entrez.read(h)
+        h.close()
+        return res
     except: return[]
 
 def fetch_abstract(pmid):
     try:
         h = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
-        recs = Entrez.read(h); h.close()
+        recs = Entrez.read(h)
+        h.close()
         article = recs['PubmedArticle'][0]['MedlineCitation']['Article']
         return " ".join(article['Abstract']['AbstractText']) if 'Abstract' in article else "Abstract not available."
     except: return "Error retrieving abstract data."
 
-# --- DB HELPERS (Multi-User Safe) ---
+# --- DB HELPERS ---
 def toggle_reading_list(pmid, title, journal, authors, date):
     email = st.session_state.user_email
-    conn = get_db()
-    with conn.cursor() as c:
-        c.execute("SELECT id FROM reading_list WHERE pmid=%s AND user_email=%s", (pmid, email))
-        if c.fetchone():
-            c.execute("DELETE FROM reading_list WHERE pmid=%s AND user_email=%s", (pmid, email))
-            msg = "Document removed from Reading Room."
-        else:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M")
-            c.execute("INSERT INTO reading_list (user_email, pmid, title, journal, authors, date, notes, last_edited) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", 
-                      (email, pmid, title, journal, authors, date, "", now))
-            msg = "Document saved to Reading Room."
-    return msg
+    res = supabase.table('reading_list').select('id').eq('pmid', pmid).eq('user_email', email).execute()
+    
+    if res.data:
+        supabase.table('reading_list').delete().eq('pmid', pmid).eq('user_email', email).execute()
+        return "Document removed from Reading Room."
+    else:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        data = {
+            "user_email": email, "pmid": pmid, "title": title, "journal": journal, 
+            "authors": authors, "date": date, "notes": "", "last_edited": now
+        }
+        supabase.table('reading_list').insert(data).execute()
+        return "Document saved to Reading Room."
 
 def export_notes_to_word():
     doc = Document()
     doc.add_heading(f"Research Notebook - {datetime.now().strftime('%Y-%m-%d')}", 0)
     email = st.session_state.user_email
     
-    conn = get_db()
-    with conn.cursor() as c:
-        doc.add_heading("Literature Notes", level=1)
-        c.execute("SELECT title, notes, authors, date FROM reading_list WHERE notes != '' AND user_email=%s", (email,))
-        for title, notes, authors, date in c.fetchall():
-            year = date[:4] if date else "n.d."
-            doc.add_heading(f"{authors} ({year}). {title}.", level=2)
-            doc.add_paragraph(notes)
+    doc.add_heading("Literature Notes", level=1)
+    res_notes = supabase.table('reading_list').select('*').neq('notes', '').eq('user_email', email).execute()
+    for item in res_notes.data:
+        year = item['date'][:4] if item['date'] else "n.d."
+        doc.add_heading(f"{item['authors']} ({year}). {item['title']}.", level=2)
+        doc.add_paragraph(item['notes'])
+    
+    doc.add_heading("General Research Ideas", level=1)
+    res_gen = supabase.table('general_notes').select('*').eq('user_email', email).order('date', desc=True).execute()
+    for item in res_gen.data:
+        p = doc.add_paragraph()
+        p.add_run(f"[{item['date']}] ").bold = True
+        p.add_run(item['content'])
         
-        doc.add_heading("General Research Ideas", level=1)
-        c.execute("SELECT content, date FROM general_notes WHERE user_email=%s ORDER BY date DESC", (email,))
-        for content, date in c.fetchall():
-            p = doc.add_paragraph()
-            p.add_run(f"[{date}] ").bold = True
-            p.add_run(content)
-            
-    bio = BytesIO(); doc.save(bio); return bio.getvalue()
-
-# --- APP INITIALIZATION ---
-init_db()
+    bio = BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
 
 # --- AUTHENTICATION PORTAL ---
 if "user_email" not in st.session_state:
@@ -268,17 +233,13 @@ if "user_email" not in st.session_state:
                 log_email = st.text_input("Academic Email:")
                 log_pass = st.text_input("Access Protocol (Password):", type="password")
                 if st.form_submit_button("Initiate Session", type="primary", use_container_width=True):
-                    conn = get_db()
-                    with conn.cursor() as c:
-                        c.execute("SELECT password_hash FROM users WHERE email=%s", (log_email,))
-                        res = c.fetchone()
-                        
-                        if res and res[0] == hash_password(log_pass):
-                            st.session_state.user_email = log_email
-                            log_audit_trail(log_email)
-                            st.rerun()
-                        else:
-                            st.error("Authentication Failed. Invalid credentials.")
+                    res = supabase.table('users').select('password_hash').eq('email', log_email).execute()
+                    if res.data and res.data[0]['password_hash'] == hash_password(log_pass):
+                        st.session_state.user_email = log_email
+                        log_audit_trail(log_email)
+                        st.rerun()
+                    else:
+                        st.error("Authentication Failed. Invalid credentials.")
                                 
         with tab_reg:
             with st.form("reg_form"):
@@ -290,14 +251,16 @@ if "user_email" not in st.session_state:
                 
                 if st.form_submit_button("Register Profile", type="primary", use_container_width=True):
                     if "@" in reg_email and reg_name and reg_pass:
-                        try:
-                            conn = get_db()
-                            with conn.cursor() as c:
-                                c.execute("INSERT INTO users (email, name, password_hash, keywords, authors, api_key) VALUES (%s, %s, %s, %s, %s, %s)", 
-                                          (reg_email, reg_name, hash_password(reg_pass), "", "", reg_key))
-                            st.success("Registration successful. Please proceed to Authenticate.")
-                        except psycopg2.IntegrityError:
+                        check_res = supabase.table('users').select('email').eq('email', reg_email).execute()
+                        if check_res.data:
                             st.error("This email is already registered.")
+                        else:
+                            new_user = {
+                                "email": reg_email, "name": reg_name, "password_hash": hash_password(reg_pass),
+                                "keywords": "", "authors": "", "api_key": reg_key
+                            }
+                            supabase.table('users').insert(new_user).execute()
+                            st.success("Registration successful. Please proceed to Authenticate.")
                     else:
                         st.error("Complete all required fields.")
     st.stop()
@@ -306,9 +269,9 @@ if "user_email" not in st.session_state:
 if "profile_loaded" not in st.session_state:
     prof = load_user_profile(st.session_state.user_email)
     st.session_state.name = prof['name']
-    st.session_state.keywords =[k for k in prof['keywords'].split(",") if k] if prof['keywords'] else[]
-    st.session_state.authors = prof['authors']
-    st.session_state.api_key = prof['api_key']
+    st.session_state.keywords = [k for k in prof['keywords'].split(",") if k] if prof.get('keywords') else[]
+    st.session_state.authors = prof.get('authors', "")
+    st.session_state.api_key = prof.get('api_key', "")
     st.session_state.feed_results =[]
     st.session_state.current_page = "Dashboard"
     st.session_state.profile_loaded = True
@@ -319,7 +282,6 @@ email = st.session_state.user_email
 # --- TOP NAVIGATION BAR ---
 nav_options =["Dashboard", "Recent Publications", "Literature Discovery", "Reading Room", "Notebook", "Settings"]
 
-# Inject Admin Console dynamically
 is_admin = (email == st.secrets.get("ADMIN_EMAIL", ""))
 if is_admin:
     nav_options.append("Admin Console")
@@ -339,14 +301,14 @@ if page == "Dashboard":
     st.markdown(f"## Welcome, {st.session_state.name}")
     st.markdown("System Overview & Active Metrics")
     
-    conn = get_db()
-    with conn.cursor() as c:
-        c.execute("SELECT COUNT(*) FROM reading_list WHERE user_email=%s", (email,))
-        saved_count = c.fetchone()[0]
-        c.execute("SELECT COUNT(*) FROM general_notes WHERE user_email=%s", (email,))
-        notes_count = c.fetchone()[0]
-        c.execute("SELECT COUNT(*) FROM reading_list WHERE notes != '' AND user_email=%s", (email,))
-        pnotes_count = c.fetchone()[0]
+    res_saved = supabase.table('reading_list').select('id', count='exact').eq('user_email', email).execute()
+    saved_count = res_saved.count if res_saved.count else 0
+    
+    res_notes = supabase.table('general_notes').select('id', count='exact').eq('user_email', email).execute()
+    notes_count = res_notes.count if res_notes.count else 0
+    
+    res_pnotes = supabase.table('reading_list').select('id', count='exact').neq('notes', '').eq('user_email', email).execute()
+    pnotes_count = res_pnotes.count if res_pnotes.count else 0
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Tracked Keywords", len(st.session_state.keywords))
@@ -382,10 +344,8 @@ elif page == "Recent Publications":
         new_kw = st.text_input("Add Tracking Filter (Press Enter):", placeholder="Enter specific terminology (e.g., Default Mode Network)")
         if new_kw and new_kw not in st.session_state.keywords:
             st.session_state.keywords.append(new_kw)
-            
-            conn = get_db()
-            with conn.cursor() as c:
-                c.execute("UPDATE users SET keywords=%s WHERE email=%s", (",".join(st.session_state.keywords), email))
+            kw_str = ",".join(st.session_state.keywords)
+            supabase.table('users').update({'keywords': kw_str}).eq('email', email).execute()
             st.rerun()
 
         if st.session_state.keywords:
@@ -395,10 +355,8 @@ elif page == "Recent Publications":
                 with tag_cols[i % 6]:
                     if st.button(f"Remove: {kw}", key=f"del_{kw}"):
                         st.session_state.keywords.remove(kw)
-                        
-                        conn = get_db()
-                        with conn.cursor() as c:
-                            c.execute("UPDATE users SET keywords=%s WHERE email=%s", (",".join(st.session_state.keywords), email))
+                        kw_str = ",".join(st.session_state.keywords)
+                        supabase.table('users').update({'keywords': kw_str}).eq('email', email).execute()
                         st.rerun()
 
     recent = get_summaries(st.session_state.keywords, st.session_state.authors, 2)
@@ -417,21 +375,23 @@ elif page == "Recent Publications":
             with c1: st.link_button("Library Access", f"https://pubmed-ncbi-nlm-nih-gov.ezproxy.haifa.ac.il/{pid}/", use_container_width=True)
             with c2: st.link_button("Sci-Hub Proxy", f"{SCIHUB_BASE_URL}{pid}", use_container_width=True)
             with c3:
-                conn = get_db()
-                with conn.cursor() as c:
-                    c.execute("SELECT id FROM reading_list WHERE pmid=%s AND user_email=%s", (pid, email))
-                    is_sv = c.fetchone()
+                check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
+                is_sv = bool(check_sv.data)
                     
                 if st.button("Save Document" if not is_sv else "Remove Document", key=f"al_sv_{pid}", use_container_width=True):
-                    st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate)); st.rerun()
+                    st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate))
+                    st.rerun()
             with c4:
-                if st.button("Generate AI Summary", key=f"btn_sum_{pid}", use_container_width=True): st.session_state[f"show_sum_{pid}"] = True
+                if st.button("Generate AI Summary", key=f"btn_sum_{pid}", use_container_width=True): 
+                    st.session_state[f"show_sum_{pid}"] = True
             
             if st.session_state.get(f"show_sum_{pid}"):
                 with st.spinner("Executing AI analysis..."):
                     summary = generate_ai_summary(fetch_abstract(pid))
                     st.markdown(f"<div class='ai-summary-box'>{summary}</div>", unsafe_allow_html=True)
-                if st.button("Dismiss Analysis", key=f"cls_{pid}"): del st.session_state[f"show_sum_{pid}"]; st.rerun()
+                if st.button("Dismiss Analysis", key=f"cls_{pid}"): 
+                    del st.session_state[f"show_sum_{pid}"]
+                    st.rerun()
 
 # --- PAGE: Literature Discovery ---
 elif page == "Literature Discovery":
@@ -454,7 +414,7 @@ elif page == "Literature Discovery":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    for art in st.session_state.get('feed_results',[]):
+    for art in st.session_state.get('feed_results', []):
         with st.container(border=True):
             pid, ttl = str(art['Id']), art['Title']
             auths, jrnl, pdate = ", ".join(art['AuthorList']), art['Source'], art['PubDate']
@@ -465,30 +425,30 @@ elif page == "Literature Discovery":
             with c1: st.link_button("Library Access", f"https://pubmed-ncbi-nlm-nih-gov.ezproxy.haifa.ac.il/{pid}/", use_container_width=True)
             with c2: st.link_button("Sci-Hub Proxy", f"{SCIHUB_BASE_URL}{pid}", use_container_width=True)
             with c3:
-                conn = get_db()
-                with conn.cursor() as c:
-                    c.execute("SELECT id FROM reading_list WHERE pmid=%s AND user_email=%s", (pid, email))
-                    is_sv = c.fetchone()
+                check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
+                is_sv = bool(check_sv.data)
                     
                 if st.button("Save Document" if not is_sv else "Remove Document", key=f"sv_{pid}", use_container_width=True):
-                    st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate)); st.rerun()
+                    st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate))
+                    st.rerun()
             with c4:
-                if st.button("Generate AI Summary", key=f"ai_{pid}", use_container_width=True): st.session_state[f"show_sum_{pid}"] = True
+                if st.button("Generate AI Summary", key=f"ai_{pid}", use_container_width=True): 
+                    st.session_state[f"show_sum_{pid}"] = True
             
             if st.session_state.get(f"show_sum_{pid}"):
                 with st.spinner("Executing AI analysis..."):
                     summary = generate_ai_summary(fetch_abstract(pid))
                     st.markdown(f"<div class='ai-summary-box'>{summary}</div>", unsafe_allow_html=True)
-                if st.button("Dismiss Analysis", key=f"cls_s_{pid}"): del st.session_state[f"show_sum_{pid}"]; st.rerun()
+                if st.button("Dismiss Analysis", key=f"cls_s_{pid}"): 
+                    del st.session_state[f"show_sum_{pid}"]
+                    st.rerun()
 
 # --- PAGE: READING ROOM ---
 elif page == "Reading Room":
     st.markdown("## Reading Room")
     
-    conn = get_db()
-    with conn.cursor(cursor_factory=RealDictCursor) as c:
-        c.execute("SELECT * FROM reading_list WHERE user_email=%s ORDER BY last_edited DESC", (email,))
-        items = c.fetchall()
+    res = supabase.table('reading_list').select('*').eq('user_email', email).order('last_edited', desc=True).execute()
+    items = res.data
     
     if not items:
         st.info("The repository is currently empty. Transfer documents from Recent Publications or Literature Discovery to begin processing.")
@@ -510,13 +470,13 @@ elif page == "Reading Room":
                 st.link_button("Investigate via Perplexity", f"https://www.perplexity.ai/search?q={q}", use_container_width=True)
             
             st.markdown("##### Analytical Notes")
-            new_note = st.text_area("Record methodological insights, critiques, or hypotheses:", value=item['notes'], key=f"nt_rr_{pmid}", height=120, label_visibility="collapsed")
+            new_note = st.text_area("Record methodological insights, critiques, or hypotheses:", value=item.get('notes', ''), key=f"nt_rr_{pmid}", height=120, label_visibility="collapsed")
             if st.button("Commit Notes to Database", key=f"sv_rr_{pmid}"):
+                supabase.table('reading_list').update({
+                    'notes': new_note, 
+                    'last_edited': datetime.now().strftime("%Y-%m-%d %H:%M")
+                }).eq('pmid', pmid).eq('user_email', email).execute()
                 
-                conn = get_db()
-                with conn.cursor() as c:
-                    c.execute("UPDATE reading_list SET notes=%s, last_edited=%s WHERE pmid=%s AND user_email=%s", 
-                              (new_note, datetime.now().strftime("%Y-%m-%d %H:%M"), pmid, email))
                 st.toast("Notes recorded.")
                 st.rerun()
 
@@ -541,33 +501,23 @@ elif page == "Notebook":
             new_gen_c = st.text_area("Content:", key="new_gen_note", height=120, label_visibility="collapsed", placeholder="Enter methodology adjustments, theoretical ideas, or supervisor meeting notes here...")
             if st.button("Append to Database", type="primary"):
                 if new_gen_c:
-                    conn = get_db()
-                    with conn.cursor() as c:
-                        c.execute("INSERT INTO general_notes (user_email, content, date) VALUES (%s, %s, %s)", 
-                                  (email, new_gen_c, datetime.now().strftime("%Y-%m-%d %H:%M")))
+                    data = {"user_email": email, "content": new_gen_c, "date": datetime.now().strftime("%Y-%m-%d %H:%M")}
+                    supabase.table('general_notes').insert(data).execute()
                     st.rerun()
         
-        conn = get_db()
-        with conn.cursor(cursor_factory=RealDictCursor) as c:
-            c.execute("SELECT id, content, date FROM general_notes WHERE user_email=%s ORDER BY id DESC", (email,))
-            g_notes = c.fetchall()
-                
-        for note in g_notes:
+        res_g = supabase.table('general_notes').select('*').eq('user_email', email).order('id', desc=True).execute()
+        for note in res_g.data:
             nid = note['id']
             with st.expander(f"Record Entry: {note['date']}"):
                 ed_gen = st.text_area("Revise Entry:", value=note['content'], key=f"ed_gen_{nid}", height=100, label_visibility="collapsed")
                 if st.button("Update Record", key=f"up_g_{nid}"):
-                    conn = get_db()
-                    with conn.cursor() as c:
-                        c.execute("UPDATE general_notes SET content=%s WHERE id=%s AND user_email=%s", (ed_gen, nid, email))
+                    supabase.table('general_notes').update({'content': ed_gen}).eq('id', nid).eq('user_email', email).execute()
                     st.toast("Record modified.")
                     st.rerun()
                     
     with tab2:
-        conn = get_db()
-        with conn.cursor(cursor_factory=RealDictCursor) as c:
-            c.execute("SELECT pmid, title, notes, last_edited FROM reading_list WHERE notes != '' AND user_email=%s ORDER BY last_edited DESC", (email,))
-            p_notes = c.fetchall()
+        res_p = supabase.table('reading_list').select('*').neq('notes', '').eq('user_email', email).order('last_edited', desc=True).execute()
+        p_notes = res_p.data
                 
         if not p_notes:
             st.info("No active literature notes detected in the repository.")
@@ -579,10 +529,10 @@ elif page == "Notebook":
                 with col_t:
                     new_pnote = st.text_area("Notes Data:", value=note['notes'], key=f"ed_p_{pmid}", height=150, label_visibility="collapsed")
                     if st.button("Update Notes Data", key=f"up_p_{pmid}"):
-                        conn = get_db()
-                        with conn.cursor() as c:
-                            c.execute("UPDATE reading_list SET notes=%s, last_edited=%s WHERE pmid=%s AND user_email=%s", 
-                                      (new_pnote, datetime.now().strftime("%Y-%m-%d %H:%M"), pmid, email))
+                        supabase.table('reading_list').update({
+                            'notes': new_pnote, 
+                            'last_edited': datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }).eq('pmid', pmid).eq('user_email', email).execute()
                         st.toast("Notes modified.")
                         st.rerun()
                 with col_l: 
@@ -603,9 +553,7 @@ elif page == "Settings":
             k_up = st.text_input("Gemini API Credential:", value=st.session_state.api_key, type="password")
             
             if st.form_submit_button("Commit Configuration Updates", type="primary"):
-                conn = get_db()
-                with conn.cursor() as c:
-                    c.execute("UPDATE users SET name=%s, api_key=%s WHERE email=%s", (n_up, k_up, email))
+                supabase.table('users').update({'name': n_up, 'api_key': k_up}).eq('email', email).execute()
                 st.session_state.name = n_up
                 st.session_state.api_key = k_up
                 st.success("System configuration updated successfully.")
@@ -622,34 +570,23 @@ elif page == "Admin Console" and is_admin:
     st.markdown("## System Administration Console")
     st.markdown("Executive telemetry and user oversight.")
     
-    conn = get_db()
-    with conn.cursor(cursor_factory=RealDictCursor) as c:
-        # Metrics
-        c.execute("SELECT COUNT(*) as c FROM users")
-        total_users = c.fetchone()['c']
-        c.execute("SELECT COUNT(*) as c FROM reading_list")
-        total_docs = c.fetchone()['c']
-        c.execute("SELECT COUNT(*) as c FROM login_history")
-        total_logins = c.fetchone()['c']
-        
-        # Tables
-        c.execute("SELECT email, name, created_at FROM users ORDER BY created_at DESC")
-        users_df = c.fetchall()
-        
-        c.execute("SELECT user_email, login_time FROM login_history ORDER BY login_time DESC LIMIT 100")
-        logins_df = c.fetchall()
+    c_users = supabase.table('users').select('email', count='exact').execute()
+    c_docs = supabase.table('reading_list').select('id', count='exact').execute()
+    c_logins = supabase.table('login_history').select('id', count='exact').execute()
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Registered Investigators", total_users)
-    m2.metric("Total Documents Processed", total_docs)
-    m3.metric("Total Authentication Events", total_logins)
+    m1.metric("Registered Investigators", c_users.count if c_users.count else 0)
+    m2.metric("Total Documents Processed", c_docs.count if c_docs.count else 0)
+    m3.metric("Total Authentication Events", c_logins.count if c_logins.count else 0)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     tab_users, tab_audit = st.tabs(["User Directory", "Audit Logs (Last 100)"])
     
     with tab_users:
+        users_df = supabase.table('users').select('email, name, created_at').order('created_at', desc=True).execute().data
         st.dataframe(users_df, use_container_width=True)
         
     with tab_audit:
+        logins_df = supabase.table('login_history').select('user_email, login_time').order('login_time', desc=True).limit(100).execute().data
         st.dataframe(logins_df, use_container_width=True)
