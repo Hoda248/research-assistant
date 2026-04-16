@@ -105,26 +105,40 @@ st.markdown("""
 # --- DATABASE CONNECTION (POSTGRESQL - PRODUCTION READY) ---
 @st.cache_resource(ttl=300)
 def _init_connection():
-    """Private function to cache the database connection."""
-    creds = st.secrets["db_credentials"]
-    conn = psycopg2.connect(
-        host=creds["host"],
-        port=creds["port"],
-        database=creds["database"],
-        user=creds["user"],
-        password=creds["password"]
-    )
+    """Private function to safely cache the database connection."""
+    # Try dictionary format first
+    if "db_credentials" in st.secrets:
+        creds = st.secrets["db_credentials"]
+        conn = psycopg2.connect(
+            host=creds["host"],
+            port=creds["port"],
+            database=creds["database"],
+            user=creds["user"],
+            password=creds["password"]
+        )
+    # Fallback to URL format
+    elif "DATABASE_URL" in st.secrets:
+        db_url = st.secrets["DATABASE_URL"]
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        conn = psycopg2.connect(db_url)
+    else:
+        raise ValueError("No database credentials found in Streamlit Secrets.")
+        
     conn.set_session(autocommit=True)
     return conn
 
 def get_db():
-    """Public function to retrieve the connection safely and handle errors."""
+    """Public function to catch errors OUTSIDE the Streamlit cache to prevent NoneType crashes."""
     try:
-        return _init_connection()
+        conn = _init_connection()
+        if conn is None:
+            raise ValueError("Connection returned None.")
+        return conn
     except Exception as e:
         st.error(f"🔌 **Database connection failed.** Please verify your Supabase credentials in Streamlit Secrets.\n\n*Error details: {e}*")
         st.stop()
-        raise SystemExit("App halted due to database connection failure.") # Failsafe if run via standard Python
+        raise SystemExit("App halted due to database connection failure.")
 
 def init_db():
     conn = get_db()
