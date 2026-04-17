@@ -101,15 +101,31 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- SUPABASE REST API CONNECTION ---
+# --- SESSION STATE INITIALIZATION ---
+# This strictly prevents "AttributeError: st.session_state has no attribute..."
+session_defaults = {
+    "user_email": None,
+    "profile_loaded": False,
+    "name": "",
+    "keywords":[],
+    "authors": "",
+    "api_key": "",
+    "feed_results":[],
+    "current_page": "Dashboard"
+}
+for key, value in session_defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+# --- SUPABASE DATABASE CONNECTION ---
 @st.cache_resource
-def init_connection() -> Client:
+def get_supabase() -> Client:
     url = st.secrets["SUPABASE_URL"]
     key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
 
 try:
-    supabase = init_connection()
+    supabase = get_supabase()
 except Exception as e:
     st.error(f"Failed to connect to Supabase API. Check your SUPABASE_URL and SUPABASE_KEY in secrets. Error: {e}")
     st.stop()
@@ -127,7 +143,7 @@ def log_audit_trail(email):
 
 # --- AI LOGIC ---
 def get_safe_model():
-    api_key = st.session_state.get("api_key")
+    api_key = st.session_state.api_key
     if not api_key: return None
     try:
         genai.configure(api_key=api_key)
@@ -202,14 +218,14 @@ def export_notes_to_word():
     email = st.session_state.user_email
     
     doc.add_heading("Literature Notes", level=1)
-    res_notes = supabase.table('reading_list').select('*').neq('notes', '').eq('user_email', email).execute()
+    res_notes = supabase.table('reading_list').select('title, notes, authors, date').neq('notes', '').eq('user_email', email).execute()
     for item in res_notes.data:
         year = item['date'][:4] if item['date'] else "n.d."
         doc.add_heading(f"{item['authors']} ({year}). {item['title']}.", level=2)
         doc.add_paragraph(item['notes'])
     
     doc.add_heading("General Research Ideas", level=1)
-    res_gen = supabase.table('general_notes').select('*').eq('user_email', email).order('date', desc=True).execute()
+    res_gen = supabase.table('general_notes').select('content, date').eq('user_email', email).order('date', desc=True).execute()
     for item in res_gen.data:
         p = doc.add_paragraph()
         p.add_run(f"[{item['date']}] ").bold = True
@@ -220,7 +236,7 @@ def export_notes_to_word():
     return bio.getvalue()
 
 # --- AUTHENTICATION PORTAL ---
-if "user_email" not in st.session_state:
+if not st.session_state.user_email:
     st.markdown("<h1 style='text-align: center; margin-top: 80px; font-size: 3rem;'>Research Workstation</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #4A6B58; font-size: 1.2rem; margin-bottom: 40px;'>Neuroscience & Psychopathology Literature Management</p>", unsafe_allow_html=True)
     
@@ -266,12 +282,13 @@ if "user_email" not in st.session_state:
     st.stop()
 
 # --- LOAD USER STATE ---
-if "profile_loaded" not in st.session_state:
+if not st.session_state.profile_loaded:
     prof = load_user_profile(st.session_state.user_email)
-    st.session_state.name = prof['name']
-    st.session_state.keywords = [k for k in prof['keywords'].split(",") if k] if prof.get('keywords') else[]
-    st.session_state.authors = prof.get('authors', "")
-    st.session_state.api_key = prof.get('api_key', "")
+    if prof:
+        st.session_state.name = prof.get('name', '')
+        st.session_state.keywords =[k for k in prof.get('keywords', '').split(",") if k] if prof.get('keywords') else[]
+        st.session_state.authors = prof.get('authors', '')
+        st.session_state.api_key = prof.get('api_key', '')
     st.session_state.feed_results =[]
     st.session_state.current_page = "Dashboard"
     st.session_state.profile_loaded = True
@@ -404,7 +421,7 @@ elif page == "Literature Discovery":
         with c2: sauth = st.text_input("Primary Author Target:", value=st.session_state.authors)
         
         c3, c4 = st.columns(2)
-        with c3: slogic = st.radio("Boolean Operator:",["OR", "AND"], horizontal=True)
+        with c3: slogic = st.radio("Boolean Operator:", ["OR", "AND"], horizontal=True)
         with c4: timeframe = st.selectbox("Historical Range:",["Week", "Month", "Year", "10 Years"], index=1)
         
         if st.button("Execute Database Query", type="primary"):
@@ -414,7 +431,7 @@ elif page == "Literature Discovery":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    for art in st.session_state.get('feed_results', []):
+    for art in st.session_state.feed_results:
         with st.container(border=True):
             pid, ttl = str(art['Id']), art['Title']
             auths, jrnl, pdate = ", ".join(art['AuthorList']), art['Source'], art['PubDate']
@@ -561,8 +578,7 @@ elif page == "Settings":
 
         st.divider()
         if st.button("Terminate Session (Log Out)"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            st.session_state.clear()
             st.rerun()
 
 # --- PAGE: ADMIN CONSOLE (Exclusive View) ---
