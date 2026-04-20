@@ -216,7 +216,7 @@ def toggle_reading_list(pmid, title, journal, authors, date):
     
     if res.data:
         supabase.table('reading_list').delete().eq('pmid', pmid).eq('user_email', email).execute()
-        return "Document removed from Reading Room."
+        return "Paper removed from Reading Room."
     else:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         data = {
@@ -224,7 +224,7 @@ def toggle_reading_list(pmid, title, journal, authors, date):
             "authors": authors, "date": date, "notes": "", "last_edited": now
         }
         supabase.table('reading_list').insert(data).execute()
-        return "Document saved to Reading Room."
+        return "Paper saved to Reading Room."
 
 def export_notes_to_word():
     doc = Document()
@@ -350,7 +350,7 @@ if page == "Dashboard":
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Tracked Keywords", len(st.session_state.keywords))
-    m2.metric("Saved Documents", saved_count)
+    m2.metric("Saved Papers", saved_count)
     m3.metric("Literature Notes", pnotes_count)
     m4.metric("General Notes", notes_count)
     
@@ -428,7 +428,7 @@ elif page == "Active Tracking":
             with c3:
                 check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
                 is_sv = bool(check_sv.data)
-                if st.button("Save Document" if not is_sv else "Remove Document", key=f"al_sv_{pid}", use_container_width=True):
+                if st.button("Save Paper" if not is_sv else "Remove Paper", key=f"al_sv_{pid}", use_container_width=True):
                     st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate))
                     st.rerun()
             with c4:
@@ -517,7 +517,7 @@ elif page == "Literature Discovery":
                     with c3:
                         check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
                         is_sv = bool(check_sv.data)
-                        if st.button("Save Document" if not is_sv else "Remove Document", key=f"sv_disc_{pid}", use_container_width=True):
+                        if st.button("Save Paper" if not is_sv else "Remove Paper", key=f"sv_disc_{pid}", use_container_width=True):
                             st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate))
                             st.rerun()
                     with c4:
@@ -541,7 +541,7 @@ elif page == "Reading Room":
     items = res.data
     
     if not items:
-        st.info("The reading room is currently empty. Transfer documents from Active Tracking or Literature Discovery to begin processing.")
+        st.info("The reading room is currently empty. Transfer papers from Active Tracking or Literature Discovery to begin processing.")
         
     for item in items:
         pmid = item['pmid']
@@ -642,7 +642,7 @@ elif page == "User Guide":
     Welcome to the **Research Assistant Workstation**. This platform is designed to streamline your literature review and synthesis workflow.
 
     ### 1. Dashboard
-    View your active metrics like tracked keywords, saved documents, and total independent ideas.
+    View your active metrics like tracked keywords, saved papers, and total independent ideas.
 
     ### 2. Active Tracking
     **Purpose:** Stay updated automatically with the latest science that matches your interests.
@@ -660,7 +660,7 @@ elif page == "User Guide":
     **Purpose:** Save and organize papers for later review and note-taking.
     *   **Action:** Review all papers you've saved from Active Tracking or Literature Discovery.
     *   **Result:** A list of your saved papers with metadata. You can write detailed analytical notes for each paper, which are stored in your personal profile. Use the "Investigate via Perplexity" button to explore complex topics mentioned in the paper through an external AI engine.
-    *   **Workflow:** Write analytical notes for each paper directly in the interface. Saving notes attaches them securely to the document and will also appear in the "Literature Notes" section in your notebook. Use the "Investigate via Perplexity" button for further investigation.
+    *   **Workflow:** Write analytical notes for each paper directly in the interface. Saving notes attaches them securely to the paper and will also appear in the "Literature Notes" section in your notebook. Use the "Investigate via Perplexity" button for further investigation.
 
     ### 5. My Notebook
     **Purpose:** A centralized hub for all your research notes and thoughts.
@@ -706,7 +706,7 @@ elif page == "Admin Console" and is_admin:
 
     m1, m2, m3 = st.columns(3)
     m1.metric("Registered Investigators", c_users.count if c_users.count else 0)
-    m2.metric("Total Documents Processed", c_docs.count if c_docs.count else 0)
+    m2.metric("Total Papers Processed", c_docs.count if c_docs.count else 0)
     m3.metric("Total Authentication Events", c_logins.count if c_logins.count else 0)
     
     st.markdown("<br>", unsafe_allow_html=True)
