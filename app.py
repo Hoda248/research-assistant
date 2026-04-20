@@ -26,7 +26,7 @@ for key, value in session_defaults.items():
         st.session_state[key] = value
 
 # --- CONFIGURATION & CSS ---
-st.set_page_config(page_title="Research Assistant", layout="wide")
+st.set_page_config(page_title="My Research Assistant", layout="wide")
 
 st.markdown("""
 <style>
@@ -49,6 +49,8 @@ st.markdown("""
         font-weight: 500 !important;
         transition: all 0.2s ease;
         padding: 0.5rem 1rem !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
     }
     
     div.stButton > button[kind="primary"] {
@@ -100,20 +102,49 @@ st.markdown("""
         box-shadow: 0 4px 6px -1px rgba(96, 143, 121, 0.08); 
     }
 
-    .tag-btn > button {
+    .api-instructions {
+        background-color: #EAF2EB; 
+        padding: 16px;
+        border-radius: 4px;
+        border-left: 3px solid #608F79; 
+        margin-bottom: 20px;
+        font-size: 0.9rem;
+        color: #2C4C3B;
+    }
+
+    /* Keyword Tags Styling for flexible width and no cutoff */
+    .tag-btn div[data-testid="stButton"] {
+        width: fit-content !important;
+    }
+    .tag-btn div[data-testid="stButton"] > button {
         border-radius: 20px !important;
-        padding: 0.2rem 0.8rem !important;
+        padding: 0.3rem 0.9rem !important;
         font-size: 0.85rem !important;
         background-color: #EAF2EB !important;
-        border: 1px solid #8EB69B !important;
+        border: 1.5px solid #8EB69B !important;
         color: #1A3628 !important;
+        white-space: nowrap !important;
+        word-break: keep-all !important;
+        width: max-content !important;
+        min-width: fit-content !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
-    .tag-btn > button:hover {
+    .tag-btn div[data-testid="stButton"] > button:hover {
         background-color: #F87171 !important;
         color: #FFFFFF !important;
         border-color: #F87171 !important;
     }
 </style>
+""", unsafe_allow_html=True)
+
+# --- GLOBAL HEADER ---
+st.markdown("""
+    <div style="text-align: center; margin-top: 1rem; margin-bottom: 2rem;">
+        <h1 style="font-family: 'Lora', serif; color: #1A3628; font-size: 3rem; font-weight: 600; margin-bottom: 0;">My Research Assistant</h1>
+        <hr style="border: 0; height: 1.5px; background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(96, 143, 121, 0.8), rgba(0, 0, 0, 0)); margin-top: 15px; margin-bottom: 15px; max-width: 60%; margin-left: auto; margin-right: auto;">
+    </div>
 """, unsafe_allow_html=True)
 
 # --- SUPABASE DATABASE CONNECTION ---
@@ -251,8 +282,7 @@ def export_notes_to_word():
 
 # --- AUTHENTICATION PORTAL ---
 if not st.session_state.logged_in:
-    st.markdown("<h1 style='text-align: center; margin-top: 80px; font-size: 3rem;'>Research Workstation</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #4A6B58; font-size: 1.2rem; margin-bottom: 40px;'>Neuroscience & Psychopathology Literature Management</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #4A6B58; font-size: 1.2rem; margin-bottom: 40px; margin-top: -10px;'>Neuroscience & Psychopathology Literature Management</p>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -309,7 +339,7 @@ if st.session_state.logged_in and not st.session_state.profile_loaded:
     prof = load_user_profile(st.session_state.user_email)
     if prof:
         st.session_state.name = prof.get('name', '')
-        st.session_state.keywords = [k for k in prof.get('keywords', '').split(",") if k] if prof.get('keywords') else[]
+        st.session_state.keywords =[k for k in prof.get('keywords', '').split(",") if k] if prof.get('keywords') else[]
         st.session_state.authors = prof.get('authors', '')
     st.session_state.profile_loaded = True
 
