@@ -1,27 +1,23 @@
-
 import streamlit as st
 from Bio import Entrez
 from supabase import create_client, Client
-from datetime import datetime, timedelta
+from datetime import datetime
 import google.generativeai as genai
 from docx import Document
 from io import BytesIO
 import urllib.parse
 
-# --- 1. PAGE CONFIGURATION (MUST BE FIRST) ---
-st.set_page_config(page_title="My Research Assistant", page_icon="🧠", layout="wide")
-
-# --- 2. SESSION STATE INITIALIZATION ---
+# --- SESSION STATE INITIALIZATION ---
 session_defaults = {
     "user_email": None,
     "logged_in": False,
     "role": "user",
     "profile_loaded": False,
     "name": "",
-    "keywords": [],
+    "keywords":[],
     "authors": "",
     "feed_results": [],
-    "discovery_keywords": [],
+    "discovery_keywords":[],
     "discovery_ran": False,
     "current_page": "Dashboard"
 }
@@ -29,133 +25,162 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 3. CUSTOM CSS: SAGE GREEN THEME & DYNAMIC TAG FIX ---
+# --- CONFIGURATION & CSS ---
+st.set_page_config(page_title="My Research Assistant", layout="wide")
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
-    /* Global Theme Styles */
+    /* Background and Global Colors */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif !important;
-        background-color: #F8FAF8 !important; 
-        color: #2D3A33 !important;
+        background-color: #FDFBF7 !important; /* Soft Cream */
+        color: #1A2A6C !important; /* Dark Navy */
     }
     
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Lora', serif !important;
-        color: #3E5A4B !important; 
-        font-weight: 500 !important;
+        color: #1A2A6C !important; /* Dark Navy */
+        font-weight: 600 !important;
+        letter-spacing: -0.02em;
     }
 
-    /* Main Navigation Buttons (Sage Green) */
+    /* Global Main Buttons (Nav & General Actions) */
     div.stButton > button {
         border-radius: 4px !important;
-        font-weight: 600 !important;
-        background-color: #608F79 !important; 
-        color: #FFFFFF !important;
-        border: none !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease;
         padding: 0.5rem 1rem !important;
+        background-color: #1A2A6C !important; /* Dark Navy */
+        color: #FFFFFF !important;
+        border: 1px solid #1A2A6C !important;
+    }
+    div.stButton > button:hover {
+        background-color: #2A3C8B !important; 
+        color: #FFFFFF !important;
     }
     
-    div.stButton > button:hover {
-        background-color: #4A6B58 !important;
+    /* Action Buttons (Under Articles - Light Sky Blue) */
+    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button, 
+    div[data-testid="stVerticalBlockBorderWrapper"] div.stLinkButton > a {
+        background-color: #E0F2FE !important; /* Light Sky Blue */
+        color: #1A2A6C !important; 
+        border: 1px solid #1A2A6C !important; 
+        border-radius: 4px !important;
+        text-decoration: none !important;
+        font-weight: 500 !important;
+        display: inline-flex !important;
+        justify-content: center !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button:hover, 
+    div[data-testid="stVerticalBlockBorderWrapper"] div.stLinkButton > a:hover {
+        background-color: #1A2A6C !important;
         color: #FFFFFF !important;
     }
 
-    /* FINAL FIX: Dynamic Keyword Tags - Forces horizontal growth and prevents cutoff */
-    .tag-btn div[data-testid="stButton"] {
-        width: auto !important;
-        display: inline-flex !important;
-        flex-shrink: 0 !important;
+    /* Article Card Container Styling */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important; 
+        border-radius: 8px !important;
+        box-shadow: 0 4px 6px -1px rgba(26, 42, 108, 0.1) !important;
+    }
+
+    /* Paper Metadata Box */
+    .paper-metadata {
+        background-color: #FDFBF7 !important; 
+        border-left: 3px solid #1A2A6C !important; 
+        padding: 12px 16px;
+        margin: 12px 0px 20px 0px;
+        font-size: 0.9rem;
+        color: #1A2A6C !important;
+        line-height: 1.6;
+        border-radius: 0px 4px 4px 0px;
     }
     
+    /* AI Summary Box */
+    .ai-summary-box {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-top: 3px solid #1A2A6C !important; 
+        padding: 24px;
+        margin-top: 16px;
+        font-size: 0.95rem;
+        line-height: 1.7;
+        color: #1E293B;
+        border-radius: 4px;
+        box-shadow: 0 4px 6px -1px rgba(26, 42, 108, 0.08); 
+    }
+
+    .api-instructions {
+        background-color: #E0F2FE !important; 
+        padding: 16px;
+        border-radius: 4px;
+        border-left: 3px solid #1A2A6C !important; 
+        margin-bottom: 20px;
+        font-size: 0.9rem;
+        color: #1A2A6C !important;
+    }
+
+    /* --- Keyword Tags: The "No-Cutoff" Fix --- */
+    .tag-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .tag-btn {
+        display: inline-flex;
+        flex-shrink: 0;
+    }
+    .tag-btn div[data-testid="stButton"] {
+        width: max-content !important;
+    }
     .tag-btn div[data-testid="stButton"] > button {
-        width: auto !important;
-        min-width: max-content !important; /* Forces box to match word length */
-        max-width: none !important;
-        white-space: nowrap !important; /* Prevents text from wrapping to 2nd line */
-        word-break: keep-all !important; 
-        padding: 0.4rem 1.2rem !important;
         border-radius: 20px !important;
-        background-color: #EAF2EB !important;
-        color: #3E5A4B !important;
-        border: 1px solid #8EB69B !important;
-        display: block !important;
+        padding: 0.3rem 0.9rem !important;
+        font-size: 0.85rem !important;
+        background-color: #E0F2FE !important;
+        border: 1px solid #1A2A6C !important;
+        color: #1A2A6C !important;
+        white-space: nowrap !important;
+        width: max-content !important;
+        flex-shrink: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+    }
+    .tag-btn div[data-testid="stButton"] > button:hover {
+        background-color: #EF4444 !important;
+        color: #FFFFFF !important;
+        border-color: #EF4444 !important;
+    }
+
+    /* --- Bookmark Icon Button Style --- */
+    .bookmark-btn div[data-testid="stButton"] > button {
+        background: transparent !important;
+        border: none !important;
+        color: #1A2A6C !important;
+        font-size: 1.6rem !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        margin-top: -5px;
+    }
+    .bookmark-btn div[data-testid="stButton"] > button:hover {
+        transform: scale(1.1);
+        background: transparent !important;
+        color: #1A2A6C !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. GLOBAL HEADER ---
-st.markdown(f"""
-    <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 style="font-size: 2.8rem;">My Research Assistant</h1>
-        <hr style="border: 0; height: 1px; background-color: #8EB69B; max-width: 50%; margin: auto;">
+# --- GLOBAL HEADER ---
+st.markdown("""
+    <div style="text-align: center; margin-top: 1rem; margin-bottom: 2.5rem;">
+        <h1 style="font-family: 'Lora', serif; color: #1A2A6C; font-size: 3rem; font-weight: 600; margin-bottom: 0;">My Research Assistant</h1>
+        <hr style="border: 0; height: 1.5px; background-color: #1A2A6C; margin-top: 15px; margin-bottom: 15px; max-width: 60%; margin-left: auto; margin-right: auto;">
     </div>
 """, unsafe_allow_html=True)
-
-# --- 5. TOP NAVIGATION BAR & ROUTING LOGIC ---
-if st.session_state.logged_in:
-    # Initialize admin status
-    is_admin = False
-    email_raw = st.session_state.get("user_email", "")
-    if email_raw and "ADMIN_EMAIL" in st.secrets:
-        if email_raw.lower().strip() == st.secrets["ADMIN_EMAIL"].lower().strip():
-            is_admin = True
-            st.session_state.role = "admin"
-
-    # Define Navigation Options with the new name for Active Tracking
-    nav_options = [
-        "Dashboard", 
-        "Active Literature Tracking", # Updated name
-        "Literature Discovery", 
-        "Reading Room", 
-        "My Notebook", 
-        "User Guide", 
-        "Settings"
-    ]
-    if is_admin:
-        nav_options.append("Admin Console")
-
-    # Render navigation buttons
-    nav_cols = st.columns(len(nav_options))
-    for i, option in enumerate(nav_options):
-        with nav_cols[i]:
-            if st.button(option, use_container_width=True, key=f"nav_btn_{option}"):
-                st.session_state.current_page = option
-                st.rerun()
-
-    # --- PAGE ROUTING ---
-    # Get the current selected page from session state
-    current_page = st.session_state.current_page
-
-    # Logic to display page content based on selection
-    if current_page == "Dashboard":
-        # Ensure your dashboard function is called here
-        pass
-        
-    elif current_page == "Active Literature Tracking":
-        # IMPORTANT: This must match the name in nav_options exactly
-        # If your function was called 'active_tracking_page()', call it here.
-        pass
-
-    elif current_page == "Reading Room":
-        # Removed the redundant st.header to fix double title issue
-        # Your reading room function/code goes here
-        pass
-
-    elif current_page == "My Notebook":
-        # Removed the redundant st.header to fix double title issue
-        # Your notebook function/code goes here
-        pass
-
-    elif current_page == "Admin Console" and is_admin:
-        # Admin logic
-        pass
-
-# --- 6. HELPERS FOR UNIVERSITY ACCESS ---
-def get_access_links(original_url):
-    haifa_proxy = f"https://ezproxy.haifa.ac.il/login?url={original_url}"
-    return haifa_proxy, original_url
 
 # --- SUPABASE DATABASE CONNECTION ---
 @st.cache_resource
@@ -292,8 +317,6 @@ def export_notes_to_word():
 
 # --- AUTHENTICATION PORTAL ---
 if not st.session_state.logged_in:
-    st.markdown("<p style='text-align: center; color: #4A6B58; font-size: 1.2rem; margin-bottom: 40px; margin-top: -10px;'>Neuroscience & Psychopathology Literature Management</p>", unsafe_allow_html=True)
-    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         tab_login, tab_reg = st.tabs(["Login", "New Investigator Registration"])
@@ -355,6 +378,21 @@ if st.session_state.logged_in and not st.session_state.profile_loaded:
 
 email = st.session_state.user_email
 
+# --- TOP NAVIGATION BAR ---
+nav_options =["Dashboard", "Active Tracking", "Literature Discovery", "Reading Room", "My Notebook", "User Guide", "Settings"]
+
+is_admin = False
+if "ADMIN_EMAIL" in st.secrets and email == st.secrets["ADMIN_EMAIL"].lower().strip():
+    is_admin = True
+    st.session_state.role = "admin"
+    nav_options.append("Admin Console")
+
+nav_cols = st.columns(len(nav_options))
+for i, option in enumerate(nav_options):
+    if nav_cols[i].button(option, use_container_width=True):
+        st.session_state.current_page = option
+        st.rerun()
+
 st.divider()
 page = st.session_state.current_page
 
@@ -385,7 +423,7 @@ if page == "Dashboard":
         with st.container(border=True):
             st.markdown("### Workstation Protocol")
             st.markdown("""
-            **1. Monitor:** Define tracking keywords in *Active Literature Tracking* to receive continuous 48-hour literature updates from PubMed.  
+            **1. Monitor:** Define tracking keywords in *Active Tracking* to receive continuous 48-hour literature updates from PubMed.  
             **2. Acquire:** Run deep searches in the *Literature Discovery* targeting specific filters or authors.  
             **3. Synthesize:** Save relevant papers to the *Reading Room* to write notes and further analyze them.  
             **4. Consolidate:** Review your collective notes and hypotheses in the *My Notebook*, and export a formatted APA manuscript directly to Word.
@@ -396,12 +434,12 @@ if page == "Dashboard":
             st.link_button("NotebookLM Access", "https://notebooklm.google.com/", use_container_width=True)
             st.link_button("Perplexity AI Engine", "https://www.perplexity.ai/", use_container_width=True)
 
-# --- PAGE: ACTIVE LITERATURE TRACKING ---
-elif page == "Active Literature Tracking":
-    st.markdown("## Active Literature Tracking for Recent Publications")
+# --- PAGE: ACTIVE TRACKING ---
+elif page == "Active Tracking":
+    st.markdown("## Active Tracking for Recent Publications")
     st.markdown("Automated monitoring of relevant publications from the last 48 hours.")
     
-    st.info("Can't access the full text? Visit [Sci-Hub](https://sci-hub.se/) and paste the title of the article.")
+    st.info("Need full text? Visit [Sci-Hub](https://sci-hub.se/) for manual access.")
 
     def add_tracking_kw():
         new_kw = st.session_state.new_trk_kw.strip()
@@ -416,12 +454,8 @@ elif page == "Active Literature Tracking":
 
         if st.session_state.keywords:
             st.caption("Active Filters:")
-            
-            # Start the flex container
             st.markdown('<div class="tag-container">', unsafe_allow_html=True)
-            
             for kw in st.session_state.keywords:
-                # Wrap button in tag-btn div to apply the flex-style
                 st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
                 if st.button(f"{kw} ✖", key=f"del_trk_{kw}"):
                     st.session_state.keywords.remove(kw)
@@ -429,8 +463,7 @@ elif page == "Active Literature Tracking":
                     supabase.table('users').update({'keywords': kw_str}).eq('email', email).execute()
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
-                
-            st.markdown('</div>', unsafe_allow_html=True) # End flex container
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # Strictly limit to 2 days
     recent = get_summaries(st.session_state.keywords, "", days=2)
@@ -442,23 +475,37 @@ elif page == "Active Literature Tracking":
         with st.container(border=True):
             pid, ttl = str(art['Id']), art['Title']
             auths, jrnl, pdate = ", ".join(art['AuthorList']), art['Source'], art['PubDate']
-            st.markdown(f"#### {ttl}")
+            
+            # Title & Bookmark Redesign
+            col_title, col_bm = st.columns([11, 1])
+            with col_title:
+                st.markdown(f"#### {ttl}")
+            with col_bm:
+                check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
+                is_sv = bool(check_sv.data)
+                bookmark_icon = "🔖" if is_sv else "➕"
+                
+                st.markdown('<div class="bookmark-btn">', unsafe_allow_html=True)
+                if st.button(bookmark_icon, key=f"al_sv_{pid}", help="Save to Reading Room"):
+                    action_msg = toggle_reading_list(pid, ttl, jrnl, auths, pdate)
+                    if "saved" in action_msg:
+                        st.toast("Article saved to Reading Room")
+                    else:
+                        st.toast("Article removed from Reading Room")
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
             st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {auths}<br><b>Publication:</b> <i>{jrnl}</i> | <b>Date:</b> {pdate}</div>", unsafe_allow_html=True)
             
-            c1, c2, c3, c4 = st.columns(4)
+            # Renaming & Styling Buttons
+            c1, c2, c3 = st.columns(3)
             pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pid}/"
             ezproxy_url = f"https://ezproxy.haifa.ac.il/login?url={pub_url}"
             
-            with c1: st.link_button("University of Haifa Access", ezproxy_url, use_container_width=True)
-            with c2: st.link_button("Direct Link", pub_url, use_container_width=True)
+            with c1: st.link_button("University Access (Haifa)", ezproxy_url, use_container_width=True)
+            with c2: st.link_button("Web Access (General)", pub_url, use_container_width=True)
             with c3:
-                check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
-                is_sv = bool(check_sv.data)
-                if st.button("Save Paper" if not is_sv else "Remove Paper", key=f"al_sv_{pid}", use_container_width=True):
-                    st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate))
-                    st.rerun()
-            with c4:
-                if st.button("Generate AI Summary", key=f"btn_sum_{pid}", use_container_width=True): 
+                if st.button("AI Summary", key=f"btn_sum_{pid}", use_container_width=True): 
                     st.session_state[f"show_sum_{pid}"] = True
             
             if st.session_state.get(f"show_sum_{pid}"):
@@ -473,7 +520,7 @@ elif page == "Active Literature Tracking":
 elif page == "Literature Discovery":
     st.markdown("## Literature Discovery")
     
-    st.info("Can't access the full text? Visit [Sci-Hub](https://sci-hub.se/) and paste the title of the article.")
+    st.info("Need full text? Visit [Sci-Hub](https://sci-hub.se/) for manual access.")
 
     def add_discovery_kw():
         new_kw = st.session_state.new_disc_kw.strip()
@@ -488,21 +535,17 @@ elif page == "Literature Discovery":
         
         if st.session_state.discovery_keywords:
             st.caption("Active Search Keywords:")
-            
-            # Start the flex container (same as above)
             st.markdown('<div class="tag-container">', unsafe_allow_html=True)
-            
             for kw in st.session_state.discovery_keywords:
                 st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
                 if st.button(f"{kw} ✖", key=f"del_disc_{kw}"):
                     st.session_state.discovery_keywords.remove(kw)
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True) # End flex container
+            st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        sauth = st.text_input("Author Name:", value="")
+        sauth = st.text_input("Target Author Name:", value="")
         
         c3, c4 = st.columns(2)
         with c3: slogic = st.radio("Search Logic (AND/OR):", ["OR", "AND"], horizontal=True)
@@ -532,23 +575,37 @@ elif page == "Literature Discovery":
                 with st.container(border=True):
                     pid, ttl = str(art['Id']), art['Title']
                     auths, jrnl, pdate = ", ".join(art['AuthorList']), art['Source'], art['PubDate']
-                    st.markdown(f"#### {ttl}")
+                    
+                    # Title & Bookmark Redesign
+                    col_title, col_bm = st.columns([11, 1])
+                    with col_title:
+                        st.markdown(f"#### {ttl}")
+                    with col_bm:
+                        check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
+                        is_sv = bool(check_sv.data)
+                        bookmark_icon = "🔖" if is_sv else "➕"
+                        
+                        st.markdown('<div class="bookmark-btn">', unsafe_allow_html=True)
+                        if st.button(bookmark_icon, key=f"sv_disc_{pid}", help="Save to Reading Room"):
+                            action_msg = toggle_reading_list(pid, ttl, jrnl, auths, pdate)
+                            if "saved" in action_msg:
+                                st.toast("Article saved to Reading Room")
+                            else:
+                                st.toast("Article removed from Reading Room")
+                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+
                     st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {auths}<br><b>Publication:</b> <i>{jrnl}</i> | <b>Date:</b> {pdate}</div>", unsafe_allow_html=True)
                     
-                    c1, c2, c3, c4 = st.columns(4)
+                    # Renaming & Styling Buttons
+                    c1, c2, c3 = st.columns(3)
                     pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pid}/"
                     ezproxy_url = f"https://ezproxy.haifa.ac.il/login?url={pub_url}"
                     
-                    with c1: st.link_button("University of Haifa Access", ezproxy_url, use_container_width=True)
-                    with c2: st.link_button("Direct Link", pub_url, use_container_width=True)
+                    with c1: st.link_button("University Access (Haifa)", ezproxy_url, use_container_width=True)
+                    with c2: st.link_button("Web Access (General)", pub_url, use_container_width=True)
                     with c3:
-                        check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
-                        is_sv = bool(check_sv.data)
-                        if st.button("Save Paper" if not is_sv else "Remove Paper", key=f"sv_disc_{pid}", use_container_width=True):
-                            st.toast(toggle_reading_list(pid, ttl, jrnl, auths, pdate))
-                            st.rerun()
-                    with c4:
-                        if st.button("Generate AI Summary", key=f"ai_disc_{pid}", use_container_width=True): 
+                        if st.button("AI Summary", key=f"ai_disc_{pid}", use_container_width=True): 
                             st.session_state[f"show_sum_{pid}"] = True
                     
                     if st.session_state.get(f"show_sum_{pid}"):
@@ -562,34 +619,42 @@ elif page == "Literature Discovery":
 # --- PAGE: READING ROOM ---
 elif page == "Reading Room":
     st.markdown("## Reading Room")
-    st.info("Need full text? Visit [Sci-Hub](https://sci-hub.se/) for manual access.")
+    st.info("Need full text? Visit[Sci-Hub](https://sci-hub.se/) for manual access.")
     
     res = supabase.table('reading_list').select('*').eq('user_email', email).order('last_edited', desc=True).execute()
     items = res.data
     
     if not items:
-        st.info("The reading room is currently empty. Transfer papers from Active Literature Tracking or Literature Discovery to begin processing.")
+        st.info("The reading room is currently empty. Transfer papers from Active Tracking or Literature Discovery to begin processing.")
         
     for item in items:
         pmid = item['pmid']
         with st.container(border=True):
-            st.markdown(f"#### {item['title']}")
+            
+            # Title & Bookmark Redesign
+            col_title, col_bm = st.columns([11, 1])
+            with col_title:
+                st.markdown(f"#### {item['title']}")
+            with col_bm:
+                st.markdown('<div class="bookmark-btn">', unsafe_allow_html=True)
+                if st.button("🔖", key=f"rm_{pmid}", help="Remove from Reading Room"): 
+                    toggle_reading_list(pmid, "", "", "", "")
+                    st.toast("Article removed from Reading Room")
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
             st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {item['authors']}<br><b>Publication:</b> <i>{item['journal']}</i> | <b>Date:</b> {item['date']}</div>", unsafe_allow_html=True)
             
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3 = st.columns(3)
             pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
             ezproxy_url = f"https://ezproxy.haifa.ac.il/login?url={pub_url}"
             q = urllib.parse.quote(f"Findings of: {item['title']}")
             
-            with c1:
-                if st.button("Remove", key=f"rm_{pmid}", use_container_width=True): 
-                    toggle_reading_list(pmid, "", "", "", "")
-                    st.rerun()
-            with c2: st.link_button("University of Haifa Access", ezproxy_url, use_container_width=True)
-            with c3: st.link_button("Direct Link", pub_url, use_container_width=True)
-            with c4: st.link_button("Investigate via Perplexity", f"https://www.perplexity.ai/search?q={q}", use_container_width=True)
+            with c1: st.link_button("University Access (Haifa)", ezproxy_url, use_container_width=True)
+            with c2: st.link_button("Web Access (General)", pub_url, use_container_width=True)
+            with c3: st.link_button("Investigate via Perplexity", f"https://www.perplexity.ai/search?q={q}", use_container_width=True)
             
-            st.markdown("##### Notes")
+            st.markdown("##### Analytical Notes")
             new_note = st.text_area("Write methodological insights, critiques, or hypotheses:", value=item.get('notes', ''), key=f"nt_rr_{pmid}", height=120, label_visibility="collapsed")
             if st.button("Save Notes", key=f"sv_rr_{pmid}"):
                 supabase.table('reading_list').update({
@@ -600,7 +665,7 @@ elif page == "Reading Room":
                 st.toast("Notes saved.")
                 st.rerun()
 
-# --- PAGE: My NOTEBOOK ---
+# --- PAGE: NOTEBOOK ---
 elif page == "My Notebook":
     st.markdown("## My Notebook")
     
@@ -664,15 +729,14 @@ elif page == "My Notebook":
 
 # --- PAGE: USER GUIDE ---
 elif page == "User Guide":
-    st.markdown("## Welcome to My Research Assistant!")
+    st.markdown("## User Guide & Research Workflow")
     st.markdown("""
-    This workspace is dedicated to supporting the scientific journey by bridging the gap between publication and synthesis. It provides a focused environment for monitoring the latest literature, organizing discoveries, and documenting the evolution of research insights.
-    By reducing logistical complexities and optimizing the research process, the platform facilitates the seamless integration of emerging scientific developments into daily academic practice.
-    
-    ### 1. Dashboard
-    View your active metrics like tracked keywords, saved papers, and total independent ideas.
+    Welcome to the **Research Assistant Workstation**. This platform is designed to streamline your literature review and synthesis workflow.
 
-    ### 2. Active Literature Tracking
+    ### 1. Dashboard
+    Provides a bird's-eye view of your entire research setup. View your active metrics like tracked keywords, saved documents, and total independent ideas.
+
+    ### 2. Active Tracking
     **Purpose:** Stay updated automatically with the latest science that matches your interests.
     *   **Action:** Add specific keywords or terminology as "Tracking Filters". You can add multiple filters, and the system will use them to continuously monitor PubMed for new publications.
     *   **Result:** Every time you visit this page, the system securely connects to PubMed and retrieves all papers published in the **last 48 hours** matching your filters.
@@ -681,14 +745,14 @@ elif page == "User Guide":
     ### 3. Literature Discovery
     **Purpose:** Conduct deep historical searches for specific topics or authors.
     *   **Action:** Enter "Subject Keywords", specify an author if applicable, and adjust the historical range to query the PubMed database. Use AND/OR logic to refine your results.
-    *   **Result:** Retrieves past papers matching your specific criteria. If you have tracking filters set in Active Literature Tracking, you can also apply those here to further narrow down results. If there are no results, try adjusting your filters or expanding the timeframe.
+    *   **Result:** Retrieves past papers matching your specific criteria. If you have tracking filters set in Active Tracking, you can also apply those here to further narrow down results. If there are no results, try adjusting your filters or expanding the timeframe.
     *   **Workflow:** This is best for finding foundational papers or conducting targeted queries outside the 48-hour auto-tracking window. Search terms here are temporary and clear between sessions.
 
     ### 4. Reading Room
     **Purpose:** Save and organize papers for later review and note-taking.
-    *   **Action:** Review all papers you've saved from Active Literature Tracking or Literature Discovery.
+    *   **Action:** Review all papers you've saved from Active Tracking or Literature Discovery.
     *   **Result:** A list of your saved papers with metadata. You can write detailed analytical notes for each paper, which are stored in your personal profile. Use the "Investigate via Perplexity" button to explore complex topics mentioned in the paper through an external AI engine.
-    *   **Workflow:** Write analytical notes for each paper directly in the interface. Saving notes attaches them securely to the paper and will also appear in the "Literature Notes" section in your notebook. Use the "Investigate via Perplexity" button for further investigation.
+    *   **Workflow:** Write analytical notes for each paper directly in the interface. Saving notes attaches them securely to the document and will also appear in the "Literature Notes" section in your notebook. Use the "Investigate via Perplexity" button for further investigation.
 
     ### 5. My Notebook
     **Purpose:** A centralized hub for all your research notes and thoughts.
@@ -696,11 +760,8 @@ elif page == "User Guide":
     *   **Literature Notes:** A read-only view of all the notes you wrote in the Reading Room, displayed as easy-to-read cards.
     *   **Export to Docx:** Click this to generate a Word Document compiling all your reading list notes and general thoughts in a structured format.
 
-    ### 6. Settings
-    **Purpose:** Manage your profile and account settings.
-    *   **Investigator Identity:** Update your name and view your registered email. (Email is fixed as it serves as your unique identifier in the system.)
-    *   **Log Out:** Clear your session and log out of the system.
-                
+    ### 🧠 Tips for AI Summaries
+    Clicking "Generate AI Summary" on any paper triggers a specialized Google Gemini AI pipeline. It extracts and formats the Objective, Methodology, Findings, and Significance of the paper.
     """)
 
 # --- PAGE: SETTINGS ---
