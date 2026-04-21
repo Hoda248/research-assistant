@@ -28,11 +28,11 @@ for key, value in session_defaults.items():
 # --- CONFIGURATION & CSS ---
 st.set_page_config(page_title="My Research Assistant", layout="wide")
 
+# --- CSS RESTORATION & FIXES ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
-    /* Background and Global Colors */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif !important;
         background-color: #FDFBF7 !important; /* Soft Cream */
@@ -41,18 +41,18 @@ st.markdown("""
     
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Lora', serif !important;
-        color: #1A2A6C !important; /* Dark Navy */
+        color: #1A2A6C !important; 
         font-weight: 600 !important;
         letter-spacing: -0.02em;
     }
 
-    /* Global Main Buttons (Nav & General Actions) */
+    /* Global Main Buttons */
     div.stButton > button {
         border-radius: 4px !important;
         font-weight: 500 !important;
         transition: all 0.2s ease;
         padding: 0.5rem 1rem !important;
-        background-color: #1A2A6C !important; /* Dark Navy */
+        background-color: #1A2A6C !important; 
         color: #FFFFFF !important;
         border: 1px solid #1A2A6C !important;
     }
@@ -61,7 +61,7 @@ st.markdown("""
         color: #FFFFFF !important;
     }
     
-    /* Action Buttons (Under Articles - Light Sky Blue) */
+    /* Action Buttons Under Articles */
     div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button, 
     div[data-testid="stVerticalBlockBorderWrapper"] div.stLinkButton > a {
         background-color: #E0F2FE !important; /* Light Sky Blue */
@@ -85,9 +85,19 @@ st.markdown("""
         border: 1px solid #CBD5E1 !important; 
         border-radius: 8px !important;
         box-shadow: 0 4px 6px -1px rgba(26, 42, 108, 0.1) !important;
+        padding: 20px !important;
     }
 
-    /* Paper Metadata Box */
+    /* Save/Remove Button Specific Overrides */
+    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button[kind="secondary"] {
+        background-color: #FFFFFF !important; 
+        color: #1A2A6C !important;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button[kind="primary"] {
+        background-color: #BEE3F8 !important; /* Darker shade for saved */
+        color: #1A2A6C !important;
+    }
+
     .paper-metadata {
         background-color: #FDFBF7 !important; 
         border-left: 3px solid #1A2A6C !important; 
@@ -99,7 +109,6 @@ st.markdown("""
         border-radius: 0px 4px 4px 0px;
     }
     
-    /* AI Summary Box */
     .ai-summary-box {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -123,29 +132,31 @@ st.markdown("""
         color: #1A2A6C !important;
     }
 
-    /* --- Keyword Tags: The "No-Cutoff" Fix --- */
+    /* Keyword Tags - The No-Cutoff Fix */
     .tag-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-bottom: 10px;
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+        margin-top: 10px !important;
+        margin-bottom: 20px !important;
     }
     .tag-btn {
-        display: inline-flex;
-        flex-shrink: 0;
+        display: inline-flex !important;
+        flex-shrink: 0 !important;
     }
     .tag-btn div[data-testid="stButton"] {
         width: max-content !important;
     }
     .tag-btn div[data-testid="stButton"] > button {
-        border-radius: 20px !important;
-        padding: 0.3rem 0.9rem !important;
-        font-size: 0.85rem !important;
         background-color: #E0F2FE !important;
-        border: 1px solid #1A2A6C !important;
         color: #1A2A6C !important;
+        border: 1px solid #1A2A6C !important;
+        border-radius: 20px !important;
         white-space: nowrap !important;
         width: max-content !important;
+        min-width: max-content !important;
+        padding: 0.3rem 0.9rem !important;
+        font-size: 0.85rem !important;
         flex-shrink: 0 !important;
         display: inline-flex !important;
         align-items: center !important;
@@ -154,22 +165,6 @@ st.markdown("""
         background-color: #EF4444 !important;
         color: #FFFFFF !important;
         border-color: #EF4444 !important;
-    }
-
-    /* --- Bookmark Icon Button Style --- */
-    .bookmark-btn div[data-testid="stButton"] > button {
-        background: transparent !important;
-        border: none !important;
-        color: #1A2A6C !important;
-        font-size: 1.6rem !important;
-        padding: 0 !important;
-        box-shadow: none !important;
-        margin-top: -5px;
-    }
-    .bookmark-btn div[data-testid="stButton"] > button:hover {
-        transform: scale(1.1);
-        background: transparent !important;
-        color: #1A2A6C !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -389,7 +384,8 @@ if "ADMIN_EMAIL" in st.secrets and email == st.secrets["ADMIN_EMAIL"].lower().st
 
 nav_cols = st.columns(len(nav_options))
 for i, option in enumerate(nav_options):
-    if nav_cols[i].button(option, use_container_width=True):
+    bt_type = "primary" if st.session_state.current_page == option else "secondary"
+    if nav_cols[i].button(option, type=bt_type, use_container_width=True):
         st.session_state.current_page = option
         st.rerun()
 
@@ -483,21 +479,20 @@ elif page == "Active Tracking":
             with col_bm:
                 check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
                 is_sv = bool(check_sv.data)
-                bookmark_icon = "🔖" if is_sv else "➕"
                 
-                st.markdown('<div class="bookmark-btn">', unsafe_allow_html=True)
-                if st.button(bookmark_icon, key=f"al_sv_{pid}", help="Save to Reading Room"):
+                btn_label = "Remove" if is_sv else "Save"
+                btn_type = "primary" if is_sv else "secondary"
+                
+                if st.button(btn_label, key=f"al_sv_{pid}", type=btn_type):
                     action_msg = toggle_reading_list(pid, ttl, jrnl, auths, pdate)
                     if "saved" in action_msg:
                         st.toast("Article saved to Reading Room")
                     else:
                         st.toast("Article removed from Reading Room")
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {auths}<br><b>Publication:</b> <i>{jrnl}</i> | <b>Date:</b> {pdate}</div>", unsafe_allow_html=True)
             
-            # Renaming & Styling Buttons
             c1, c2, c3 = st.columns(3)
             pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pid}/"
             ezproxy_url = f"https://ezproxy.haifa.ac.il/login?url={pub_url}"
@@ -583,21 +578,20 @@ elif page == "Literature Discovery":
                     with col_bm:
                         check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
                         is_sv = bool(check_sv.data)
-                        bookmark_icon = "🔖" if is_sv else "➕"
                         
-                        st.markdown('<div class="bookmark-btn">', unsafe_allow_html=True)
-                        if st.button(bookmark_icon, key=f"sv_disc_{pid}", help="Save to Reading Room"):
+                        btn_label = "Remove" if is_sv else "Save"
+                        btn_type = "primary" if is_sv else "secondary"
+                        
+                        if st.button(btn_label, key=f"sv_disc_{pid}", type=btn_type):
                             action_msg = toggle_reading_list(pid, ttl, jrnl, auths, pdate)
                             if "saved" in action_msg:
                                 st.toast("Article saved to Reading Room")
                             else:
                                 st.toast("Article removed from Reading Room")
                             st.rerun()
-                        st.markdown('</div>', unsafe_allow_html=True)
 
                     st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {auths}<br><b>Publication:</b> <i>{jrnl}</i> | <b>Date:</b> {pdate}</div>", unsafe_allow_html=True)
                     
-                    # Renaming & Styling Buttons
                     c1, c2, c3 = st.columns(3)
                     pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pid}/"
                     ezproxy_url = f"https://ezproxy.haifa.ac.il/login?url={pub_url}"
@@ -605,7 +599,7 @@ elif page == "Literature Discovery":
                     with c1: st.link_button("University Access (Haifa)", ezproxy_url, use_container_width=True)
                     with c2: st.link_button("Web Access (General)", pub_url, use_container_width=True)
                     with c3:
-                        if st.button("AI Summary", key=f"ai_disc_{pid}", use_container_width=True): 
+                        if st.button("Generate AI Summary", key=f"ai_disc_{pid}", use_container_width=True): 
                             st.session_state[f"show_sum_{pid}"] = True
                     
                     if st.session_state.get(f"show_sum_{pid}"):
@@ -619,7 +613,7 @@ elif page == "Literature Discovery":
 # --- PAGE: READING ROOM ---
 elif page == "Reading Room":
     st.markdown("## Reading Room")
-    st.info("Need full text? Visit[Sci-Hub](https://sci-hub.se/) for manual access.")
+    st.info("Need full text? Visit [Sci-Hub](https://sci-hub.se/) for manual access.")
     
     res = supabase.table('reading_list').select('*').eq('user_email', email).order('last_edited', desc=True).execute()
     items = res.data
@@ -631,17 +625,28 @@ elif page == "Reading Room":
         pmid = item['pmid']
         with st.container(border=True):
             
-            # Title & Bookmark Redesign
+            # Title & Bookmark Deletion Protection Logic
             col_title, col_bm = st.columns([11, 1])
             with col_title:
                 st.markdown(f"#### {item['title']}")
             with col_bm:
-                st.markdown('<div class="bookmark-btn">', unsafe_allow_html=True)
-                if st.button("🔖", key=f"rm_{pmid}", help="Remove from Reading Room"): 
+                has_notes = item.get('notes', '').strip() != ''
+                
+                if st.button("Remove", key=f"rm_{pmid}", type="primary"): 
+                    if has_notes:
+                        st.session_state[f"confirm_rm_{pmid}"] = True
+                    else:
+                        toggle_reading_list(pmid, "", "", "", "")
+                        st.toast("Article removed from Reading Room")
+                        st.rerun()
+            
+            if st.session_state.get(f"confirm_rm_{pmid}"):
+                st.warning("This paper has saved notes. Removing it will permanently delete these notes. Do you want to continue?")
+                if st.button("Confirm Delete", key=f"conf_rm_{pmid}"):
                     toggle_reading_list(pmid, "", "", "", "")
+                    del st.session_state[f"confirm_rm_{pmid}"]
                     st.toast("Article removed from Reading Room")
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {item['authors']}<br><b>Publication:</b> <i>{item['journal']}</i> | <b>Date:</b> {item['date']}</div>", unsafe_allow_html=True)
             
@@ -656,7 +661,7 @@ elif page == "Reading Room":
             
             st.markdown("##### Analytical Notes")
             new_note = st.text_area("Write methodological insights, critiques, or hypotheses:", value=item.get('notes', ''), key=f"nt_rr_{pmid}", height=120, label_visibility="collapsed")
-            if st.button("Save Notes", key=f"sv_rr_{pmid}"):
+            if st.button("Save Notes", key=f"sv_rr_{pmid}", type="secondary"):
                 supabase.table('reading_list').update({
                     'notes': new_note, 
                     'last_edited': datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -665,7 +670,7 @@ elif page == "Reading Room":
                 st.toast("Notes saved.")
                 st.rerun()
 
-# --- PAGE: NOTEBOOK ---
+# --- PAGE: My NOTEBOOK ---
 elif page == "My Notebook":
     st.markdown("## My Notebook")
     
@@ -674,7 +679,7 @@ elif page == "My Notebook":
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["General Notes", "Literature Notes"])
+    tab1, tab2 = st.tabs(["General Research Notes & Thoughts", "Literature Notes"])
     
     with tab1:
         with st.container(border=True):
@@ -716,9 +721,8 @@ elif page == "My Notebook":
                 c1.caption(f"Last edited: {note['last_edited']}")
                 
                 pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-                ezproxy_url = f"https://ezproxy.haifa.ac.il/login?url={pub_url}"
                 
-                c2.link_button("University of Haifa Access", ezproxy_url, use_container_width=True)
+                c2.link_button("🔗 Source URL", pub_url, use_container_width=True)
                 
                 if c3.button("✖ Delete Note", key=f"del_p_{pmid}", use_container_width=True):
                     supabase.table('reading_list').update({
@@ -729,14 +733,15 @@ elif page == "My Notebook":
 
 # --- PAGE: USER GUIDE ---
 elif page == "User Guide":
-    st.markdown("## User Guide & Research Workflow")
+    st.markdown("## Welcome to My Research Assistant!")
     st.markdown("""
-    Welcome to the **Research Assistant Workstation**. This platform is designed to streamline your literature review and synthesis workflow.
-
+    This workspace is dedicated to supporting the scientific journey by bridging the gap between publication and synthesis. It provides a focused environment for monitoring the latest literature, organizing discoveries, and documenting the evolution of research insights.
+    By reducing logistical complexities and optimizing the research process, the platform facilitates the seamless integration of emerging scientific developments into daily academic practice.
+    
     ### 1. Dashboard
-    Provides a bird's-eye view of your entire research setup. View your active metrics like tracked keywords, saved documents, and total independent ideas.
+    View your active metrics like tracked keywords, saved papers, and total independent ideas.
 
-    ### 2. Active Tracking
+    ### 2. Active Literature Tracking
     **Purpose:** Stay updated automatically with the latest science that matches your interests.
     *   **Action:** Add specific keywords or terminology as "Tracking Filters". You can add multiple filters, and the system will use them to continuously monitor PubMed for new publications.
     *   **Result:** Every time you visit this page, the system securely connects to PubMed and retrieves all papers published in the **last 48 hours** matching your filters.
@@ -745,14 +750,14 @@ elif page == "User Guide":
     ### 3. Literature Discovery
     **Purpose:** Conduct deep historical searches for specific topics or authors.
     *   **Action:** Enter "Subject Keywords", specify an author if applicable, and adjust the historical range to query the PubMed database. Use AND/OR logic to refine your results.
-    *   **Result:** Retrieves past papers matching your specific criteria. If you have tracking filters set in Active Tracking, you can also apply those here to further narrow down results. If there are no results, try adjusting your filters or expanding the timeframe.
+    *   **Result:** Retrieves past papers matching your specific criteria. If you have tracking filters set in Active Literature Tracking, you can also apply those here to further narrow down results. If there are no results, try adjusting your filters or expanding the timeframe.
     *   **Workflow:** This is best for finding foundational papers or conducting targeted queries outside the 48-hour auto-tracking window. Search terms here are temporary and clear between sessions.
 
     ### 4. Reading Room
     **Purpose:** Save and organize papers for later review and note-taking.
-    *   **Action:** Review all papers you've saved from Active Tracking or Literature Discovery.
+    *   **Action:** Review all papers you've saved from Active Literature Tracking or Literature Discovery.
     *   **Result:** A list of your saved papers with metadata. You can write detailed analytical notes for each paper, which are stored in your personal profile. Use the "Investigate via Perplexity" button to explore complex topics mentioned in the paper through an external AI engine.
-    *   **Workflow:** Write analytical notes for each paper directly in the interface. Saving notes attaches them securely to the document and will also appear in the "Literature Notes" section in your notebook. Use the "Investigate via Perplexity" button for further investigation.
+    *   **Workflow:** Write analytical notes for each paper directly in the interface. Saving notes attaches them securely to the paper and will also appear in the "Literature Notes" section in your notebook. Use the "Investigate via Perplexity" button for further investigation.
 
     ### 5. My Notebook
     **Purpose:** A centralized hub for all your research notes and thoughts.
@@ -760,8 +765,11 @@ elif page == "User Guide":
     *   **Literature Notes:** A read-only view of all the notes you wrote in the Reading Room, displayed as easy-to-read cards.
     *   **Export to Docx:** Click this to generate a Word Document compiling all your reading list notes and general thoughts in a structured format.
 
-    ### 🧠 Tips for AI Summaries
-    Clicking "Generate AI Summary" on any paper triggers a specialized Google Gemini AI pipeline. It extracts and formats the Objective, Methodology, Findings, and Significance of the paper.
+    ### 6. Settings
+    **Purpose:** Manage your profile and account settings.
+    *   **Investigator Identity:** Update your name and view your registered email. (Email is fixed as it serves as your unique identifier in the system.)
+    *   **Log Out:** Clear your session and log out of the system.
+                
     """)
 
 # --- PAGE: SETTINGS ---
