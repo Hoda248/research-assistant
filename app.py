@@ -230,19 +230,59 @@ def export_notes_to_word():
     doc.save(bio)
     return bio.getvalue()
 
-# --- AUTHENTICATION PORTAL (No Password) ---
+# --- AUTHENTICATION PORTAL ---
 if not st.session_state.logged_in:
-    st.markdown("### Welcome Back")
-    user_email = st.text_input("Enter your Investigator Email:")
-    if st.button("Log In", type="primary"):
-        if user_email:
-            st.session_state.user_email = user_email.lower().strip()
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("Please enter a valid email.")
-    st.stop() # Stops the rest of the app from loading until logged in
-
+    st.markdown("<p style='text-align: center; color: #4A6B58; font-size: 1.2rem; margin-bottom: 40px; margin-top: -10px;'>Neuroscience & Psychopathology Literature Management</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        tab_login, tab_reg = st.tabs(["Login", "New Investigator Registration"])
+        
+        with tab_login:
+            with st.form("login_form"):
+                log_email = st.text_input("Email:")
+                if st.form_submit_button("Access Workspace", type="primary", use_container_width=True):
+                    cleaned_email = log_email.lower().strip()
+                    if cleaned_email:
+                        res = supabase.table('users').select('*').eq('email', cleaned_email).execute()
+                        if res.data:
+                            st.session_state.user_email = cleaned_email
+                            st.session_state.logged_in = True
+                            log_audit_trail(cleaned_email)
+                            st.rerun()
+                        else:
+                            st.error("Email not found. Please register first.")
+                    else:
+                        st.error("Please enter a valid email.")
+                                
+        with tab_reg:
+            with st.form("reg_form"):
+                reg_name = st.text_input("Investigator Name:")
+                reg_email = st.text_input("Email:")
+                
+                if st.form_submit_button("Register Profile", type="primary", use_container_width=True):
+                    cleaned_email = reg_email.lower().strip()
+                    if "@" in cleaned_email and reg_name.strip():
+                        check_res = supabase.table('users').select('email').eq('email', cleaned_email).execute()
+                        if check_res.data:
+                            st.error("This email is already registered.")
+                        else:
+                            new_user = {
+                                "email": cleaned_email, 
+                                "name": reg_name.strip(),
+                                "password_hash": "", 
+                                "keywords": "", 
+                                "authors": "",
+                                "api_key": ""
+                            }
+                            supabase.table('users').insert(new_user).execute()
+                            st.session_state.user_email = cleaned_email
+                            st.session_state.logged_in = True
+                            log_audit_trail(cleaned_email)
+                            st.rerun()
+                    else:
+                        st.error("Complete all required fields with a valid email.")
+    st.stop()
 
 # --- LOAD USER STATE ---
 if st.session_state.logged_in and not st.session_state.profile_loaded:
