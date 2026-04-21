@@ -1,23 +1,30 @@
-import streamlit as st
+import import streamlit as st
 from Bio import Entrez
 from supabase import create_client, Client
-from datetime import datetime
+from datetime import datetime, timedelta
 import google.generativeai as genai
 from docx import Document
 from io import BytesIO
 import urllib.parse
 
-# --- SESSION STATE INITIALIZATION ---
+# --- 1. PAGE CONFIGURATION (MUST BE FIRST) ---
+st.set_page_config(
+    page_title="My Research Assistant",
+    page_icon="🧠",
+    layout="wide"
+)
+
+# --- 2. SESSION STATE INITIALIZATION ---
 session_defaults = {
     "user_email": None,
     "logged_in": False,
     "role": "user",
     "profile_loaded": False,
     "name": "",
-    "keywords":[],
+    "keywords": [],
     "authors": "",
     "feed_results": [],
-    "discovery_keywords":[],
+    "discovery_keywords": [],
     "discovery_ran": False,
     "current_page": "Dashboard"
 }
@@ -25,127 +32,136 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- CONFIGURATION & CSS ---
-st.set_page_config(page_title="My Research Assistant", layout="wide")
-
+# --- 3. CUSTOM CSS: THE "ACADEMIC ELITE" THEME (NAVY & CREAM) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
+    /* Global Theme */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif !important;
-        color: #2D3A33; 
+        background-color: #FDFBF7 !important; /* Soft Cream Background */
+        color: #1A2A6C !important; /* Navy Blue Text */
     }
     
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Lora', serif !important;
-        color: #1A3628 !important; 
-        font-weight: 500 !important;
+        color: #1A2A6C !important; 
+        font-weight: 600 !important;
         letter-spacing: -0.02em;
     }
 
+    /* Main Navigation & Action Buttons */
     div.stButton > button {
-        border-radius: 4px !important;
-        font-weight: 500 !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
         transition: all 0.2s ease;
         padding: 0.5rem 1rem !important;
-        white-space: normal !important;
-        word-wrap: break-word !important;
-    }
-    
-    div.stButton > button[kind="primary"] {
-        background-color: #608F79 !important; 
-        color: #FFFFFF !important;
+        background-color: #1A2A6C !important; /* Dark Navy */
+        color: #FFFFFF !important; /* White Text */
         border: none !important;
+        box-shadow: 0 2px 4px rgba(26, 42, 108, 0.2) !important;
     }
     
-    div.stButton > button[kind="secondary"] {
+    div.stButton > button:hover {
+        background-color: #2A3C8B !important; 
+        box-shadow: 0 4px 8px rgba(26, 42, 108, 0.3) !important;
+        color: #FFFFFF !important;
+    }
+
+    /* Article Cards Styling */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #FFFFFF !important;
-        color: #4A6B58 !important; 
-        border: 1px solid #8EB69B !important; 
-    }
-    
-    div.stButton > button[kind="secondary"]:hover, div.stLinkButton > a:hover {
-        border-color: #608F79 !important;
-        color: #1A3628 !important;
-        background-color: #F4F9F4 !important; 
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 10px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+        padding: 20px !important;
     }
 
-    div.stLinkButton > a {
-        color: #4A6B58 !important;
-        border: 1px solid #8EB69B !important;
-        border-radius: 4px !important;
-        text-decoration: none !important;
-    }
-
+    /* Metadata & Info Boxes */
     .paper-metadata {
-        background-color: #F4F9F4; 
-        border-left: 3px solid #8EB69B; 
+        background-color: #E0F2FE; /* Light Sky Blue */
+        border-left: 4px solid #1A2A6C; 
         padding: 12px 16px;
-        margin: 12px 0px 20px 0px;
+        margin: 12px 0px;
         font-size: 0.9rem;
-        color: #3E5A4B;
+        color: #1A2A6C;
         line-height: 1.6;
-        border-radius: 0px 4px 4px 0px;
+        border-radius: 0px 6px 6px 0px;
     }
     
     .ai-summary-box {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
-        border-top: 3px solid #608F79; 
-        padding: 24px;
-        margin-top: 16px;
-        font-size: 0.95rem;
-        line-height: 1.7;
-        color: #1E293B;
-        border-radius: 4px;
-        box-shadow: 0 4px 6px -1px rgba(96, 143, 121, 0.08); 
+        border-top: 4px solid #1A2A6C; 
+        padding: 20px;
+        border-radius: 8px;
     }
 
-    .api-instructions {
-        background-color: #EAF2EB; 
-        padding: 16px;
-        border-radius: 4px;
-        border-left: 3px solid #608F79; 
-        margin-bottom: 20px;
-        font-size: 0.9rem;
-        color: #2C4C3B;
-    }
-
-    /* Keyword Tags Styling for flexible width and no cutoff */
+    /* KEYWORD TAGS FIX: Flexible width, no cutoff */
     .tag-btn div[data-testid="stButton"] {
-        width: fit-content !important;
+        width: auto !important;
+        display: inline-flex !important;
     }
     .tag-btn div[data-testid="stButton"] > button {
-        border-radius: 20px !important;
-        padding: 0.3rem 0.9rem !important;
-        font-size: 0.85rem !important;
-        background-color: #EAF2EB !important;
-        border: 1.5px solid #8EB69B !important;
-        color: #1A3628 !important;
-        white-space: nowrap !important;
-        word-break: keep-all !important;
-        width: max-content !important;
-        min-width: fit-content !important;
         display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important; /* Ensures no cutoff */
+        white-space: nowrap !important; /* Keeps text in one line */
+        border-radius: 20px !important;
+        padding: 0.4rem 1.2rem !important;
+        font-size: 0.85rem !important;
+        background-color: #E0F2FE !important; 
+        border: 1.5px solid #1A2A6C !important;
+        color: #1A2A6C !important;
     }
     .tag-btn div[data-testid="stButton"] > button:hover {
-        background-color: #F87171 !important;
+        background-color: #EF4444 !important; /* Red for delete */
         color: #FFFFFF !important;
-        border-color: #F87171 !important;
+        border-color: #EF4444 !important;
+    }
+
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #1A2A6C !important;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #FFFFFF !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- GLOBAL HEADER ---
+# --- 4. GLOBAL HEADER ---
 st.markdown("""
-    <div style="text-align: center; margin-top: 1rem; margin-bottom: 2rem;">
-        <h1 style="font-family: 'Lora', serif; color: #1A3628; font-size: 3rem; font-weight: 600; margin-bottom: 0;">My Research Assistant</h1>
-        <hr style="border: 0; height: 1.5px; background-image: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(96, 143, 121, 0.8), rgba(0, 0, 0, 0)); margin-top: 15px; margin-bottom: 15px; max-width: 60%; margin-left: auto; margin-right: auto;">
+    <div style="text-align: center; margin-top: 0rem; margin-bottom: 2rem;">
+        <h1 style="font-family: 'Lora', serif; color: #1A2A6C; font-size: 3.2rem; font-weight: 600; margin-bottom: 0;">My Research Assistant</h1>
+        <hr style="border: 0; height: 1.5px; background-color: #1A2A6C; margin-top: 10px; margin-bottom: 20px; max-width: 50%; margin-left: auto; margin-right: auto; opacity: 0.7;">
     </div>
 """, unsafe_allow_html=True)
+
+# --- 5. TOP NAVIGATION BAR ---
+nav_options = ["Dashboard", "Active Tracking", "Literature Discovery", "Research Notebook", "User Guide", "Settings"]
+
+# (Case Insensitive)
+email_check = st.session_state.get("user_email", "")
+if email_check and "ADMIN_EMAIL" in st.secrets:
+    if email_check.lower().strip() == st.secrets["ADMIN_EMAIL"].lower().strip():
+        if "Admin Console" not in nav_options:
+            nav_options.append("Admin Console")
+
+if st.session_state.logged_in:
+    cols = st.columns(len(nav_options))
+    for i, option in enumerate(nav_options):
+        with cols[i]:
+            if st.button(option, use_container_width=True, key=f"nav_{option}"):
+                st.session_state.current_page = option
+                st.rerun()
+
+# --- 6. HELPERS FOR UNIVERSITY ACCESS ---
+def get_access_links(original_url):
+    haifa_proxy = f"https://ezproxy.haifa.ac.il/login?url={original_url}"
+    return haifa_proxy, original_url
 
 # --- SUPABASE DATABASE CONNECTION ---
 @st.cache_resource
