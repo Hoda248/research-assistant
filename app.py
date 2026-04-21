@@ -7,12 +7,17 @@ from docx import Document
 from io import BytesIO
 import urllib.parse
 
+import streamlit as st
+from Bio import Entrez
+from supabase import create_client, Client
+from datetime import datetime, timedelta
+import google.generativeai as genai
+from docx import Document
+from io import BytesIO
+import urllib.parse
+
 # --- 1. PAGE CONFIGURATION (MUST BE FIRST) ---
-st.set_page_config(
-    page_title="My Research Assistant",
-    page_icon="🧠",
-    layout="wide"
-)
+st.set_page_config(page_title="My Research Assistant", page_icon="🧠", layout="wide")
 
 # --- 2. SESSION STATE INITIALIZATION ---
 session_defaults = {
@@ -32,129 +37,79 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 3. CUSTOM CSS: THE "ACADEMIC ELITE" THEME (NAVY & CREAM) ---
+# --- 3. CUSTOM CSS (SAGE GREEN THEME & TAG FIX) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
-    /* Global Theme */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif !important;
-        background-color: #FDFBF7 !important; /* Soft Cream Background */
-        color: #1A2A6C !important; /* Navy Blue Text */
+        background-color: #F8FAF8 !important; 
+        color: #2D3A33 !important;
     }
     
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Lora', serif !important;
-        color: #1A2A6C !important; 
-        font-weight: 600 !important;
-        letter-spacing: -0.02em;
+        color: #3E5A4B !important; 
+        font-weight: 500 !important;
     }
 
-    /* Main Navigation & Action Buttons */
+    /* כפתורי ניווט ירוק סייג' */
     div.stButton > button {
-        border-radius: 6px !important;
-        font-weight: 600 !important;
-        transition: all 0.2s ease;
-        padding: 0.5rem 1rem !important;
-        background-color: #1A2A6C !important; /* Dark Navy */
-        color: #FFFFFF !important; /* White Text */
+        border-radius: 4px !important;
+        font-weight: 500 !important;
+        background-color: #608F79 !important; 
+        color: #FFFFFF !important;
         border: none !important;
-        box-shadow: 0 2px 4px rgba(26, 42, 108, 0.2) !important;
+        padding: 0.5rem 1rem !important;
     }
     
     div.stButton > button:hover {
-        background-color: #2A3C8B !important; 
-        box-shadow: 0 4px 8px rgba(26, 42, 108, 0.3) !important;
+        background-color: #4A6B58 !important;
         color: #FFFFFF !important;
     }
 
-    /* Article Cards Styling */
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important;
-        border-radius: 10px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
-        padding: 20px !important;
-    }
-
-    /* Metadata & Info Boxes */
-    .paper-metadata {
-        background-color: #E0F2FE; /* Light Sky Blue */
-        border-left: 4px solid #1A2A6C; 
-        padding: 12px 16px;
-        margin: 12px 0px;
-        font-size: 0.9rem;
-        color: #1A2A6C;
-        line-height: 1.6;
-        border-radius: 0px 6px 6px 0px;
-    }
-    
-    .ai-summary-box {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-top: 4px solid #1A2A6C; 
-        padding: 20px;
-        border-radius: 8px;
-    }
-
-    /* KEYWORD TAGS FIX: Flexible width, no cutoff */
+    /* תיקון חיתוך מילים - המשבצת תגדל לפי המילה */
     .tag-btn div[data-testid="stButton"] {
         width: auto !important;
         display: inline-flex !important;
     }
     .tag-btn div[data-testid="stButton"] > button {
-        display: inline-flex !important;
         width: auto !important;
-        min-width: 0 !important;
-        max-width: none !important; /* Ensures no cutoff */
-        white-space: nowrap !important; /* Keeps text in one line */
+        min-width: max-content !important; 
+        max-width: none !important;
+        white-space: nowrap !important; 
+        padding: 0.3rem 0.9rem !important;
         border-radius: 20px !important;
-        padding: 0.4rem 1.2rem !important;
-        font-size: 0.85rem !important;
-        background-color: #E0F2FE !important; 
-        border: 1.5px solid #1A2A6C !important;
-        color: #1A2A6C !important;
-    }
-    .tag-btn div[data-testid="stButton"] > button:hover {
-        background-color: #EF4444 !important; /* Red for delete */
-        color: #FFFFFF !important;
-        border-color: #EF4444 !important;
-    }
-
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #1A2A6C !important;
-    }
-    section[data-testid="stSidebar"] * {
-        color: #FFFFFF !important;
+        background-color: #EAF2EB !important;
+        color: #3E5A4B !important;
+        border: 1px solid #8EB69B !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 4. GLOBAL HEADER ---
-st.markdown("""
-    <div style="text-align: center; margin-top: 0rem; margin-bottom: 2rem;">
-        <h1 style="font-family: 'Lora', serif; color: #1A2A6C; font-size: 3.2rem; font-weight: 600; margin-bottom: 0;">My Research Assistant</h1>
-        <hr style="border: 0; height: 1.5px; background-color: #1A2A6C; margin-top: 10px; margin-bottom: 20px; max-width: 50%; margin-left: auto; margin-right: auto; opacity: 0.7;">
+st.markdown(f"""
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 style="font-size: 2.8rem;">My Research Assistant</h1>
+        <hr style="border: 0; height: 1px; background-color: #8EB69B; max-width: 50%; margin: auto;">
     </div>
 """, unsafe_allow_html=True)
 
 # --- 5. TOP NAVIGATION BAR ---
-nav_options = ["Dashboard", "Active Tracking", "Literature Discovery", "Research Notebook", "User Guide", "Settings"]
-
-# (Case Insensitive)
-email_check = st.session_state.get("user_email", "")
-if email_check and "ADMIN_EMAIL" in st.secrets:
-    if email_check.lower().strip() == st.secrets["ADMIN_EMAIL"].lower().strip():
-        if "Admin Console" not in nav_options:
-            nav_options.append("Admin Console")
-
 if st.session_state.logged_in:
-    cols = st.columns(len(nav_options))
+    nav_options = ["Dashboard", "Active Literature Tracking", "Literature Discovery", "Reading Room", "My Notebook", "User Guide", "Settings"]
+    
+    email_check = st.session_state.get("user_email", "")
+    if email_check and "ADMIN_EMAIL" in st.secrets:
+        if email_check.lower().strip() == st.secrets["ADMIN_EMAIL"].lower().strip():
+            if "Admin Console" not in nav_options:
+                nav_options.append("Admin Console")
+
+    nav_cols = st.columns(len(nav_options))
     for i, option in enumerate(nav_options):
-        with cols[i]:
-            if st.button(option, use_container_width=True, key=f"nav_{option}"):
+        with nav_cols[i]:
+            if st.button(option, use_container_width=True, key=f"btn_{option}"):
                 st.session_state.current_page = option
                 st.rerun()
 
@@ -391,7 +346,7 @@ if page == "Dashboard":
         with st.container(border=True):
             st.markdown("### Workstation Protocol")
             st.markdown("""
-            **1. Monitor:** Define tracking keywords in *Active Tracking* to receive continuous 48-hour literature updates from PubMed.  
+            **1. Monitor:** Define tracking keywords in *Active Literature Tracking* to receive continuous 48-hour literature updates from PubMed.  
             **2. Acquire:** Run deep searches in the *Literature Discovery* targeting specific filters or authors.  
             **3. Synthesize:** Save relevant papers to the *Reading Room* to write notes and further analyze them.  
             **4. Consolidate:** Review your collective notes and hypotheses in the *My Notebook*, and export a formatted APA manuscript directly to Word.
@@ -402,9 +357,9 @@ if page == "Dashboard":
             st.link_button("NotebookLM Access", "https://notebooklm.google.com/", use_container_width=True)
             st.link_button("Perplexity AI Engine", "https://www.perplexity.ai/", use_container_width=True)
 
-# --- PAGE: ACTIVE TRACKING ---
-elif page == "Active Tracking":
-    st.markdown("## Active Tracking for Recent Publications")
+# --- PAGE: ACTIVE LITERATURE TRACKING ---
+elif page == "Active Literature Tracking":
+    st.markdown("## Active Literature Tracking for Recent Publications")
     st.markdown("Automated monitoring of relevant publications from the last 48 hours.")
     
     st.info("Can't access the full text? Visit [Sci-Hub](https://sci-hub.se/) and paste the title of the article.")
@@ -571,7 +526,7 @@ elif page == "Reading Room":
     items = res.data
     
     if not items:
-        st.info("The reading room is currently empty. Transfer papers from Active Tracking or Literature Discovery to begin processing.")
+        st.info("The reading room is currently empty. Transfer papers from Active Literature Tracking or Literature Discovery to begin processing.")
         
     for item in items:
         pmid = item['pmid']
@@ -592,7 +547,7 @@ elif page == "Reading Room":
             with c3: st.link_button("Direct Link", pub_url, use_container_width=True)
             with c4: st.link_button("Investigate via Perplexity", f"https://www.perplexity.ai/search?q={q}", use_container_width=True)
             
-            st.markdown("##### Analytical Notes")
+            st.markdown("##### Notes")
             new_note = st.text_area("Write methodological insights, critiques, or hypotheses:", value=item.get('notes', ''), key=f"nt_rr_{pmid}", height=120, label_visibility="collapsed")
             if st.button("Save Notes", key=f"sv_rr_{pmid}"):
                 supabase.table('reading_list').update({
@@ -667,14 +622,14 @@ elif page == "My Notebook":
 
 # --- PAGE: USER GUIDE ---
 elif page == "User Guide":
-    st.markdown("## User Guide & Research Workflow")
+    st.markdown("## User Guide")
     st.markdown("""
     Welcome to the **Research Assistant Workstation**. This platform is designed to streamline your literature review and synthesis workflow.
 
     ### 1. Dashboard
     View your active metrics like tracked keywords, saved papers, and total independent ideas.
 
-    ### 2. Active Tracking
+    ### 2. Active Literature Tracking
     **Purpose:** Stay updated automatically with the latest science that matches your interests.
     *   **Action:** Add specific keywords or terminology as "Tracking Filters". You can add multiple filters, and the system will use them to continuously monitor PubMed for new publications.
     *   **Result:** Every time you visit this page, the system securely connects to PubMed and retrieves all papers published in the **last 48 hours** matching your filters.
@@ -683,12 +638,12 @@ elif page == "User Guide":
     ### 3. Literature Discovery
     **Purpose:** Conduct deep historical searches for specific topics or authors.
     *   **Action:** Enter "Subject Keywords", specify an author if applicable, and adjust the historical range to query the PubMed database. Use AND/OR logic to refine your results.
-    *   **Result:** Retrieves past papers matching your specific criteria. If you have tracking filters set in Active Tracking, you can also apply those here to further narrow down results. If there are no results, try adjusting your filters or expanding the timeframe.
+    *   **Result:** Retrieves past papers matching your specific criteria. If you have tracking filters set in Active Literature Tracking, you can also apply those here to further narrow down results. If there are no results, try adjusting your filters or expanding the timeframe.
     *   **Workflow:** This is best for finding foundational papers or conducting targeted queries outside the 48-hour auto-tracking window. Search terms here are temporary and clear between sessions.
 
     ### 4. Reading Room
     **Purpose:** Save and organize papers for later review and note-taking.
-    *   **Action:** Review all papers you've saved from Active Tracking or Literature Discovery.
+    *   **Action:** Review all papers you've saved from Active Literature Tracking or Literature Discovery.
     *   **Result:** A list of your saved papers with metadata. You can write detailed analytical notes for each paper, which are stored in your personal profile. Use the "Investigate via Perplexity" button to explore complex topics mentioned in the paper through an external AI engine.
     *   **Workflow:** Write analytical notes for each paper directly in the interface. Saving notes attaches them securely to the paper and will also appear in the "Literature Notes" section in your notebook. Use the "Investigate via Perplexity" button for further investigation.
 
