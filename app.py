@@ -1,13 +1,8 @@
 import streamlit as st
-from Bio import Entrez
-from supabase import create_client, Client
-from datetime import datetime
-import google.generativeai as genai
-from docx import Document
-from io import BytesIO
-import urllib.parse
 
-# --- SESSION STATE INITIALIZATION ---
+# --- 1. PAGE CONFIGURATION & SESSION INITIALIZATION ---
+st.set_page_config(page_title="My Research Assistant", page_icon="🧠", layout="wide")
+
 session_defaults = {
     "user_email": None,
     "logged_in": False,
@@ -25,155 +20,93 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- CONFIGURATION & CSS ---
-st.set_page_config(page_title="My Research Assistant", layout="wide")
+from Bio import Entrez
+from supabase import create_client, Client
+from datetime import datetime
+import google.generativeai as genai
+from docx import Document
+from io import BytesIO
+import urllib.parse
 
-# --- CSS RESTORATION & FIXES ---
+# --- 2. GLOBAL CSS: PASTEL TURQUOISE & CLEAN ACADEMIC THEME ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
 
+    /* Global Theme */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif !important;
-        background-color: #FDFBF7 !important; /* Soft Cream */
-        color: #1A2A6C !important; /* Dark Navy */
+        background-color: #FDFBF7 !important; /* Soft Cream background */
+        color: #004D40 !important; /* Dark Teal */
     }
     
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Lora', serif !important;
-        color: #1A2A6C !important; 
+        color: #004D40 !important; 
         font-weight: 600 !important;
-        letter-spacing: -0.02em;
     }
 
-    /* Global Main Buttons */
-    div.stButton > button {
+    /* Top Navigation Buttons */
+    div.stButton > button[data-testid="baseButton-secondary"] {
+        background-color: #E0F7FA !important; /* Pastel Turquoise */
+        color: #004D40 !important;
+        border: 1px solid #004D40 !important;
         border-radius: 4px !important;
-        font-weight: 500 !important;
-        transition: all 0.2s ease;
-        padding: 0.5rem 1rem !important;
-        background-color: #1A2A6C !important; 
-        color: #FFFFFF !important;
-        border: 1px solid #1A2A6C !important;
-    }
-    div.stButton > button:hover {
-        background-color: #2A3C8B !important; 
-        color: #FFFFFF !important;
-    }
-    
-    /* Action Buttons Under Articles */
-    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button, 
-    div[data-testid="stVerticalBlockBorderWrapper"] div.stLinkButton > a {
-        background-color: #E0F2FE !important; /* Light Sky Blue */
-        color: #1A2A6C !important; 
-        border: 1px solid #1A2A6C !important; 
-        border-radius: 4px !important;
-        text-decoration: none !important;
-        font-weight: 500 !important;
-        display: inline-flex !important;
-        justify-content: center !important;
-    }
-    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button:hover, 
-    div[data-testid="stVerticalBlockBorderWrapper"] div.stLinkButton > a:hover {
-        background-color: #1A2A6C !important;
-        color: #FFFFFF !important;
+        font-weight: 600 !important;
     }
 
-    /* Article Card Container Styling */
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important; 
-        border-radius: 8px !important;
-        box-shadow: 0 4px 6px -1px rgba(26, 42, 108, 0.1) !important;
-        padding: 20px !important;
-    }
-
-    /* Save/Remove Button Specific Overrides */
-    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button[kind="secondary"] {
-        background-color: #FFFFFF !important; 
-        color: #1A2A6C !important;
-    }
-    div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button[kind="primary"] {
-        background-color: #BEE3F8 !important; /* Darker shade for saved */
-        color: #1A2A6C !important;
-    }
-
-    .paper-metadata {
-        background-color: #FDFBF7 !important; 
-        border-left: 3px solid #1A2A6C !important; 
-        padding: 12px 16px;
-        margin: 12px 0px 20px 0px;
-        font-size: 0.9rem;
-        color: #1A2A6C !important;
-        line-height: 1.6;
-        border-radius: 0px 4px 4px 0px;
-    }
-    
-    .ai-summary-box {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-top: 3px solid #1A2A6C !important; 
-        padding: 24px;
-        margin-top: 16px;
-        font-size: 0.95rem;
-        line-height: 1.7;
-        color: #1E293B;
-        border-radius: 4px;
-        box-shadow: 0 4px 6px -1px rgba(26, 42, 108, 0.08); 
-    }
-
-    .api-instructions {
-        background-color: #E0F2FE !important; 
-        padding: 16px;
-        border-radius: 4px;
-        border-left: 3px solid #1A2A6C !important; 
-        margin-bottom: 20px;
-        font-size: 0.9rem;
-        color: #1A2A6C !important;
-    }
-
-    /* Keyword Tags - The No-Cutoff Fix */
+    /* Keyword Tags: Horizontal, No Cutoff, Proper Gaps */
     .tag-container {
         display: flex !important;
         flex-wrap: wrap !important;
         gap: 10px !important;
-        margin-top: 10px !important;
-        margin-bottom: 20px !important;
+        margin: 10px 0px 20px 0px !important;
     }
-    .tag-btn {
-        display: inline-flex !important;
-        flex-shrink: 0 !important;
-    }
-    .tag-btn div[data-testid="stButton"] {
-        width: max-content !important;
-    }
+
     .tag-btn div[data-testid="stButton"] > button {
-        background-color: #E0F2FE !important;
-        color: #1A2A6C !important;
-        border: 1px solid #1A2A6C !important;
+        background-color: #E0F7FA !important;
+        color: #004D40 !important;
+        border: 1px solid #004D40 !important;
         border-radius: 20px !important;
-        white-space: nowrap !important;
+        padding: 4px 12px !important;
+        white-space: nowrap !important; /* Forces one line */
         width: max-content !important;
         min-width: max-content !important;
-        padding: 0.3rem 0.9rem !important;
-        font-size: 0.85rem !important;
-        flex-shrink: 0 !important;
-        display: inline-flex !important;
-        align-items: center !important;
     }
-    .tag-btn div[data-testid="stButton"] > button:hover {
-        background-color: #EF4444 !important;
-        color: #FFFFFF !important;
-        border-color: #EF4444 !important;
+
+    /* Save/Remove Buttons - Fixes "Remov-e" and Colors */
+    .save-btn-wrapper div[data-testid="stButton"] > button {
+        background-color: #FFFFFF !important; /* Light for Save */
+        color: #004D40 !important;
+        border: 1px solid #004D40 !important;
+        white-space: nowrap !important;
+        width: 100% !important;
+    }
+
+    .remove-btn-wrapper div[data-testid="stButton"] > button {
+        background-color: #B2EBF2 !important; /* Darker Turquoise for Remove */
+        color: #004D40 !important;
+        border: 1px solid #004D40 !important;
+        white-space: nowrap !important;
+        width: 100% !important;
+    }
+
+    /* Article Cards Styling */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #B2DFDB !important;
+        border-radius: 8px !important;
+        padding: 20px !important;
+        box-shadow: 0 2px 4px rgba(0, 77, 64, 0.05) !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- GLOBAL HEADER ---
+# --- 3. GLOBAL HEADER ---
 st.markdown("""
     <div style="text-align: center; margin-top: 1rem; margin-bottom: 2.5rem;">
-        <h1 style="font-family: 'Lora', serif; color: #1A2A6C; font-size: 3rem; font-weight: 600; margin-bottom: 0;">My Research Assistant</h1>
-        <hr style="border: 0; height: 1.5px; background-color: #1A2A6C; margin-top: 15px; margin-bottom: 15px; max-width: 60%; margin-left: auto; margin-right: auto;">
+        <h1 style="font-family: 'Lora', serif; color: #004D40; font-size: 3rem; font-weight: 600; margin-bottom: 0;">My Research Assistant</h1>
+        <hr style="border: 0; height: 1.5px; background-color: #004D40; margin-top: 15px; margin-bottom: 15px; max-width: 60%; margin-left: auto; margin-right: auto;">
     </div>
 """, unsafe_allow_html=True)
 
@@ -226,7 +159,7 @@ def get_safe_model():
 
 def generate_ai_summary(abstract):
     model = get_safe_model()
-    if not model: return "AI Configuration Error. Please verify the AI_API_KEY in Streamlit secrets."
+    if not model: return "API Key Configuration Error. Please verify the AI_API_KEY in Streamlit secrets."
     prompt = f"""Summarize this abstract into 4 structured points for a brain researcher:
     1. OBJECTIVE: Main research question.
     2. METHODOLOGY: Tools used (EEG, animal models, fMRI, etc).
@@ -274,10 +207,9 @@ def fetch_abstract(pmid):
 def toggle_reading_list(pmid, title, journal, authors, date):
     email = st.session_state.user_email
     res = supabase.table('reading_list').select('id').eq('pmid', pmid).eq('user_email', email).execute()
-    
     if res.data:
         supabase.table('reading_list').delete().eq('pmid', pmid).eq('user_email', email).execute()
-        return "Paper removed from Reading Room."
+        return "removed"
     else:
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
         data = {
@@ -285,7 +217,7 @@ def toggle_reading_list(pmid, title, journal, authors, date):
             "authors": authors, "date": date, "notes": "", "last_edited": now
         }
         supabase.table('reading_list').insert(data).execute()
-        return "Paper saved to Reading Room."
+        return "saved"
 
 def export_notes_to_word():
     doc = Document()
@@ -319,6 +251,7 @@ if not st.session_state.logged_in:
         with tab_login:
             with st.form("login_form"):
                 log_email = st.text_input("Email:")
+                log_pass = st.text_input("Password:", type="password")
                 if st.form_submit_button("Access Workspace", type="primary", use_container_width=True):
                     cleaned_email = log_email.lower().strip()
                     if cleaned_email:
@@ -335,8 +268,9 @@ if not st.session_state.logged_in:
                                 
         with tab_reg:
             with st.form("reg_form"):
-                reg_name = st.text_input("Investigator Name:")
+                reg_name = st.text_input("Name:")
                 reg_email = st.text_input("Email:")
+                reg_pass = st.text_input("Password:", type="password")
                 
                 if st.form_submit_button("Register Profile", type="primary", use_container_width=True):
                     cleaned_email = reg_email.lower().strip()
@@ -432,10 +366,9 @@ if page == "Dashboard":
 
 # --- PAGE: ACTIVE TRACKING ---
 elif page == "Active Tracking":
-    st.markdown("## Active Tracking for Recent Publications")
+    st.markdown("## Active Tracking")
     st.markdown("Automated monitoring of relevant publications from the last 48 hours.")
-    
-    st.info("Need full text? Visit [Sci-Hub](https://sci-hub.se/) for manual access.")
+    st.info("Need full text? Visit[Sci-Hub](https://sci-hub.se/) for manual access.")
 
     def add_tracking_kw():
         new_kw = st.session_state.new_trk_kw.strip()
@@ -450,8 +383,12 @@ elif page == "Active Tracking":
 
         if st.session_state.keywords:
             st.caption("Active Filters:")
+            
+            # 1. Open the horizontal flexible container
             st.markdown('<div class="tag-container">', unsafe_allow_html=True)
+            
             for kw in st.session_state.keywords:
+                # 2. Wrap each button in a tag-btn div for horizontal alignment
                 st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
                 if st.button(f"{kw} ✖", key=f"del_trk_{kw}"):
                     st.session_state.keywords.remove(kw)
@@ -459,36 +396,50 @@ elif page == "Active Tracking":
                     supabase.table('users').update({'keywords': kw_str}).eq('email', email).execute()
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
+            
+            # 3. Close the container
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # Strictly limit to 2 days
     recent = get_summaries(st.session_state.keywords, "", days=2)
     
     if not recent and st.session_state.keywords:
-        st.info("No novel publications identified within the last 48 hours for the current filters.")
+        st.info("No new publications identified within the last 48 hours for the current filters.")
         
     for art in recent:
         with st.container(border=True):
             pid, ttl = str(art['Id']), art['Title']
             auths, jrnl, pdate = ", ".join(art['AuthorList']), art['Source'], art['PubDate']
             
-            # Title & Bookmark Redesign
-            col_title, col_bm = st.columns([11, 1])
+            col_title, col_sv = st.columns([0.85, 0.15])
             with col_title:
                 st.markdown(f"#### {ttl}")
-            with col_bm:
-                check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
+            with col_sv:
+                check_sv = supabase.table('reading_list').select('id, notes').eq('pmid', pid).eq('user_email', email).execute()
                 is_sv = bool(check_sv.data)
+                has_notes = is_sv and bool(check_sv.data[0].get('notes', '').strip())
                 
-                btn_label = "Remove" if is_sv else "Save"
-                btn_type = "primary" if is_sv else "secondary"
-                
-                if st.button(btn_label, key=f"al_sv_{pid}", type=btn_type):
-                    action_msg = toggle_reading_list(pid, ttl, jrnl, auths, pdate)
-                    if "saved" in action_msg:
+                if is_sv:
+                    st.markdown('<div class="remove-btn-marker"></div>', unsafe_allow_html=True)
+                    if st.button("Remove", key=f"sv_{pid}", type="secondary", use_container_width=True):
+                        if has_notes:
+                            st.session_state[f"confirm_rm_{pid}"] = True
+                        else:
+                            toggle_reading_list(pid, ttl, jrnl, auths, pdate)
+                            st.toast("Removed from Reading Room")
+                            st.rerun()
+                else:
+                    st.markdown('<div class="save-btn-marker"></div>', unsafe_allow_html=True)
+                    if st.button("Save", key=f"sv_{pid}", type="secondary", use_container_width=True):
+                        toggle_reading_list(pid, ttl, jrnl, auths, pdate)
                         st.toast("Article saved to Reading Room")
-                    else:
-                        st.toast("Article removed from Reading Room")
+                        st.rerun()
+
+            if st.session_state.get(f"confirm_rm_{pid}"):
+                st.warning("This paper has saved notes. Removing it will permanently delete these notes. Do you want to continue?")
+                if st.button("Confirm Delete", key=f"conf_rm_{pid}", type="primary"):
+                    toggle_reading_list(pid, ttl, jrnl, auths, pdate)
+                    del st.session_state[f"confirm_rm_{pid}"]
+                    st.toast("Removed from Reading Room")
                     st.rerun()
 
             st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {auths}<br><b>Publication:</b> <i>{jrnl}</i> | <b>Date:</b> {pdate}</div>", unsafe_allow_html=True)
@@ -500,21 +451,20 @@ elif page == "Active Tracking":
             with c1: st.link_button("University Access (Haifa)", ezproxy_url, use_container_width=True)
             with c2: st.link_button("Web Access (General)", pub_url, use_container_width=True)
             with c3:
-                if st.button("AI Summary", key=f"btn_sum_{pid}", use_container_width=True): 
+                if st.button("AI Summary", key=f"btn_sum_{pid}", type="secondary", use_container_width=True): 
                     st.session_state[f"show_sum_{pid}"] = True
             
             if st.session_state.get(f"show_sum_{pid}"):
                 with st.spinner("Executing AI analysis..."):
                     summary = generate_ai_summary(fetch_abstract(pid))
                     st.markdown(f"<div class='ai-summary-box'>{summary}</div>", unsafe_allow_html=True)
-                if st.button("Dismiss Analysis", key=f"cls_{pid}"): 
+                if st.button("Dismiss Analysis", key=f"cls_{pid}", type="secondary"): 
                     del st.session_state[f"show_sum_{pid}"]
                     st.rerun()
 
 # --- PAGE: Literature Discovery ---
 elif page == "Literature Discovery":
     st.markdown("## Literature Discovery")
-    
     st.info("Need full text? Visit [Sci-Hub](https://sci-hub.se/) for manual access.")
 
     def add_discovery_kw():
@@ -525,11 +475,11 @@ elif page == "Literature Discovery":
 
     with st.container(border=True):
         st.markdown("### Filters")
-        
         st.text_input("Keywords (Press Enter to Add):", key="new_disc_kw", on_change=add_discovery_kw)
         
         if st.session_state.discovery_keywords:
             st.caption("Active Search Keywords:")
+            # FIXED: Using tag-container for horizontal flow
             st.markdown('<div class="tag-container">', unsafe_allow_html=True)
             for kw in st.session_state.discovery_keywords:
                 st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
@@ -555,8 +505,8 @@ elif page == "Literature Discovery":
                     st.session_state.feed_results = get_summaries(st.session_state.discovery_keywords, sauth, t_map[timeframe], slogic)
         with col_clear:
             if st.button("Clear Search", type="secondary", use_container_width=True):
-                st.session_state.discovery_keywords =[]
-                st.session_state.feed_results =[]
+                st.session_state.discovery_keywords = []
+                st.session_state.feed_results = []
                 st.session_state.discovery_ran = False
                 st.rerun()
 
@@ -571,27 +521,46 @@ elif page == "Literature Discovery":
                     pid, ttl = str(art['Id']), art['Title']
                     auths, jrnl, pdate = ", ".join(art['AuthorList']), art['Source'], art['PubDate']
                     
-                    # Title & Bookmark Redesign
-                    col_title, col_bm = st.columns([11, 1])
+                    col_title, col_sv = st.columns([0.85, 0.15])
                     with col_title:
                         st.markdown(f"#### {ttl}")
-                    with col_bm:
-                        check_sv = supabase.table('reading_list').select('id').eq('pmid', pid).eq('user_email', email).execute()
+                    
+                    with col_sv:
+                        check_sv = supabase.table('reading_list').select('id, notes').eq('pmid', pid).eq('user_email', email).execute()
                         is_sv = bool(check_sv.data)
+                        has_notes = is_sv and bool(check_sv.data[0].get('notes', '').strip())
                         
-                        btn_label = "Remove" if is_sv else "Save"
-                        btn_type = "primary" if is_sv else "secondary"
-                        
-                        if st.button(btn_label, key=f"sv_disc_{pid}", type=btn_type):
-                            action_msg = toggle_reading_list(pid, ttl, jrnl, auths, pdate)
-                            if "saved" in action_msg:
+                        if is_sv:
+                            # FIXED: Wrapped in remove-btn-wrapper to prevent cutoff
+                            st.markdown('<div class="remove-btn-wrapper">', unsafe_allow_html=True)
+                            if st.button("Remove", key=f"sv_disc_{pid}", use_container_width=True):
+                                if has_notes:
+                                    st.session_state[f"confirm_rm_disc_{pid}"] = True
+                                else:
+                                    toggle_reading_list(pid, ttl, jrnl, auths, pdate)
+                                    st.toast("Removed from Reading Room")
+                                    st.rerun()
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            # FIXED: Wrapped in save-btn-wrapper
+                            st.markdown('<div class="save-btn-wrapper">', unsafe_allow_html=True)
+                            if st.button("Save", key=f"sv_disc_{pid}", use_container_width=True):
+                                toggle_reading_list(pid, ttl, jrnl, auths, pdate)
                                 st.toast("Article saved to Reading Room")
-                            else:
-                                st.toast("Article removed from Reading Room")
+                                st.rerun()
+                            st.markdown('</div>', unsafe_allow_html=True)
+
+                    if st.session_state.get(f"confirm_rm_disc_{pid}"):
+                        st.warning("This paper has saved notes. Removing it will permanently delete these notes. Continue?")
+                        if st.button("Confirm Delete", key=f"conf_rm_disc_{pid}", type="primary"):
+                            toggle_reading_list(pid, ttl, jrnl, auths, pdate)
+                            del st.session_state[f"confirm_rm_disc_{pid}"]
+                            st.toast("Removed from Reading Room")
                             st.rerun()
 
                     st.markdown(f"<div class='paper-metadata'><b>Authors:</b> {auths}<br><b>Publication:</b> <i>{jrnl}</i> | <b>Date:</b> {pdate}</div>", unsafe_allow_html=True)
                     
+                    # ACTION BUTTONS (University, Web, Summary)
                     c1, c2, c3 = st.columns(3)
                     pub_url = f"https://pubmed.ncbi.nlm.nih.gov/{pid}/"
                     ezproxy_url = f"https://ezproxy.haifa.ac.il/login?url={pub_url}"
@@ -599,14 +568,14 @@ elif page == "Literature Discovery":
                     with c1: st.link_button("University Access (Haifa)", ezproxy_url, use_container_width=True)
                     with c2: st.link_button("Web Access (General)", pub_url, use_container_width=True)
                     with c3:
-                        if st.button("Generate AI Summary", key=f"ai_disc_{pid}", use_container_width=True): 
+                        if st.button("AI Summary", key=f"ai_disc_{pid}", use_container_width=True): 
                             st.session_state[f"show_sum_{pid}"] = True
                     
                     if st.session_state.get(f"show_sum_{pid}"):
                         with st.spinner("Executing AI analysis..."):
                             summary = generate_ai_summary(fetch_abstract(pid))
                             st.markdown(f"<div class='ai-summary-box'>{summary}</div>", unsafe_allow_html=True)
-                        if st.button("Dismiss Analysis", key=f"cls_s_{pid}"): 
+                        if st.button("Dismiss Analysis", key=f"cls_s_{pid}", type="secondary"): 
                             del st.session_state[f"show_sum_{pid}"]
                             st.rerun()
 
@@ -625,26 +594,13 @@ elif page == "Reading Room":
         pmid = item['pmid']
         with st.container(border=True):
             
-            # Title & Bookmark Deletion Protection Logic
             col_title, col_bm = st.columns([11, 1])
             with col_title:
                 st.markdown(f"#### {item['title']}")
             with col_bm:
-                has_notes = item.get('notes', '').strip() != ''
-                
-                if st.button("Remove", key=f"rm_{pmid}", type="primary"): 
-                    if has_notes:
-                        st.session_state[f"confirm_rm_{pmid}"] = True
-                    else:
-                        toggle_reading_list(pmid, "", "", "", "")
-                        st.toast("Article removed from Reading Room")
-                        st.rerun()
-            
-            if st.session_state.get(f"confirm_rm_{pmid}"):
-                st.warning("This paper has saved notes. Removing it will permanently delete these notes. Do you want to continue?")
-                if st.button("Confirm Delete", key=f"conf_rm_{pmid}"):
+                st.markdown('<div class="remove-btn-marker"></div>', unsafe_allow_html=True)
+                if st.button("Remove", key=f"rm_{pmid}", type="secondary"): 
                     toggle_reading_list(pmid, "", "", "", "")
-                    del st.session_state[f"confirm_rm_{pmid}"]
                     st.toast("Article removed from Reading Room")
                     st.rerun()
 
@@ -700,7 +656,7 @@ elif page == "My Notebook":
                 st.markdown(note['content'])
                 c1, c2 = st.columns([5, 1])
                 c1.caption(f"Added: {note['date']}")
-                if c2.button("✖ Delete", key=f"del_g_{nid}", use_container_width=True):
+                if c2.button("✖ Delete", key=f"del_g_{nid}", use_container_width=True, type="secondary"):
                     supabase.table('general_notes').delete().eq('id', nid).execute()
                     st.rerun()
                     
@@ -724,7 +680,7 @@ elif page == "My Notebook":
                 
                 c2.link_button("🔗 Source URL", pub_url, use_container_width=True)
                 
-                if c3.button("✖ Delete Note", key=f"del_p_{pmid}", use_container_width=True):
+                if c3.button("✖ Delete Note", key=f"del_p_{pmid}", use_container_width=True, type="secondary"):
                     supabase.table('reading_list').update({
                         'notes': '', 
                         'last_edited': datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -843,7 +799,7 @@ elif page == "Admin Console" and is_admin:
                 
                 if st.session_state.get(f"confirm_delete_{u_email}", False):
                     st.warning("Confirm Deletion?")
-                    if st.button("Yes, Delete", key=f"confirm_yes_{u_email}"):
+                    if st.button("Yes, Delete", key=f"confirm_yes_{u_email}", type="primary"):
                         supabase.table('reading_list').delete().eq('user_email', u_email).execute()
                         supabase.table('general_notes').delete().eq('user_email', u_email).execute()
                         supabase.table('login_history').delete().eq('user_email', u_email).execute()
