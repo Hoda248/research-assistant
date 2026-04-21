@@ -361,22 +361,6 @@ if st.session_state.logged_in and not st.session_state.profile_loaded:
 
 email = st.session_state.user_email
 
-# --- TOP NAVIGATION BAR ---
-nav_options =["Dashboard", "Active Tracking", "Literature Discovery", "Reading Room", "My Notebook", "User Guide", "Settings"]
-
-is_admin = False
-if "ADMIN_EMAIL" in st.secrets and email == st.secrets["ADMIN_EMAIL"].lower().strip():
-    is_admin = True
-    st.session_state.role = "admin"
-    nav_options.append("Admin Console")
-
-nav_cols = st.columns(len(nav_options))
-for i, option in enumerate(nav_options):
-    bt_type = "primary" if st.session_state.current_page == option else "secondary"
-    if nav_cols[i].button(option, type=bt_type, use_container_width=True):
-        st.session_state.current_page = option
-        st.rerun()
-
 st.divider()
 page = st.session_state.current_page
 
