@@ -417,11 +417,11 @@ elif page == "Active Literature Tracking":
         if st.session_state.keywords:
             st.caption("Active Filters:")
             
-            # Open the horizontal flexible container
+            # Start the flex container
             st.markdown('<div class="tag-container">', unsafe_allow_html=True)
             
             for kw in st.session_state.keywords:
-                # Wrap each button in a tag-btn div
+                # Wrap button in tag-btn div to apply the flex-style
                 st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
                 if st.button(f"{kw} ✖", key=f"del_trk_{kw}"):
                     st.session_state.keywords.remove(kw)
@@ -430,8 +430,7 @@ elif page == "Active Literature Tracking":
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
                 
-            # Close the container
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True) # End flex container
 
     # Strictly limit to 2 days
     recent = get_summaries(st.session_state.keywords, "", days=2)
@@ -489,17 +488,18 @@ elif page == "Literature Discovery":
         
         if st.session_state.discovery_keywords:
             st.caption("Active Search Keywords:")
-            cols_per_row = 8
-            for i, kw in enumerate(st.session_state.discovery_keywords):
-                col_idx = i % cols_per_row
-                if col_idx == 0:
-                    c_row = st.columns(cols_per_row)
-                with c_row[col_idx]:
-                    st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
-                    if st.button(f"{kw} ✖", key=f"del_disc_{kw}"):
-                        st.session_state.discovery_keywords.remove(kw)
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Start the flex container (same as above)
+            st.markdown('<div class="tag-container">', unsafe_allow_html=True)
+            
+            for kw in st.session_state.discovery_keywords:
+                st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
+                if st.button(f"{kw} ✖", key=f"del_disc_{kw}"):
+                    st.session_state.discovery_keywords.remove(kw)
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True) # End flex container
         
         st.markdown("<br>", unsafe_allow_html=True)
         sauth = st.text_input("Author Name:", value="")
