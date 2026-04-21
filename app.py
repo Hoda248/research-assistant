@@ -29,43 +29,63 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 3. UPDATED CSS: FORCE SINGLE-LINE KEYWORD TAGS ---
+# --- 3. UPDATED CSS: LIGHT BLUE THEME & HORIZONTAL TAGS ---
 st.markdown("""
 <style>
-    /* ... (keep your existing font/background settings) ... */
+    /* Global Font & Background settings */
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif !important;
+        background-color: #FDFBF7 !important; /* Cream Background */
+    }
 
-    /* KEYWORD TAGS: Force horizontal growth and prevent line breaks */
+    /* KEYWORD TAGS: Light Blue Theme, Horizontal Flow, No Cutoff */
+    .tag-container {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+        margin-bottom: 20px !important;
+    }
+
     .tag-btn {
-        display: inline-block !important; /* Prevents the container from limiting width */
-        width: max-content !important;
+        display: inline-block !important;
     }
 
     .tag-btn div[data-testid="stButton"] {
-        width: max-content !important;
         display: inline-block !important;
+        width: auto !important;
     }
     
     .tag-btn div[data-testid="stButton"] > button {
-        width: max-content !important; /* Force button to match text width */
-        min-width: max-content !important; 
-        white-space: nowrap !important; /* Strictly prevents the word from splitting */
-        word-break: keep-all !important; 
-        overflow: visible !important;
-        
-        padding: 0.4rem 1.2rem !important;
+        /* Design Settings (Light Blue & Navy) */
+        background-color: #E0F2FE !important; /* Light Sky Blue */
+        color: #1A2A6C !important; /* Navy Blue Text */
+        border: 1px solid #1A2A6C !important; /* Navy Border */
         border-radius: 20px !important;
-        background-color: #EAF2EB !important;
-        color: #3E5A4B !important;
-        border: 1px solid #8EB69B !important;
+        padding: 0.4rem 1.2rem !important;
+        
+        /* Layout Settings (Fixing the Cutoff & Wrapping) */
+        width: max-content !important;
+        min-width: max-content !important;
+        white-space: nowrap !important; /* Keeps text on one line */
+        word-break: keep-all !important;
+        overflow: visible !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+
+    .tag-btn div[data-testid="stButton"] > button:hover {
+        background-color: #EF4444 !important; /* Red on hover for deletion */
+        color: #FFFFFF !important;
+        border-color: #EF4444 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. GLOBAL HEADER ---
+# --- 4. GLOBAL HEADER (NAVY THEME) ---
 st.markdown(f"""
     <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 style="font-size: 2.8rem;">My Research Assistant</h1>
-        <hr style="border: 0; height: 1px; background-color: #8EB69B; max-width: 50%; margin: auto;">
+        <h1 style="font-family: 'Lora', serif; color: #1A2A6C; font-size: 2.8rem; font-weight: 600;">My Research Assistant</h1>
+        <hr style="border: 0; height: 1.5px; background-color: #1A2A6C; max-width: 50%; margin: auto; opacity: 0.6;">
     </div>
 """, unsafe_allow_html=True)
 
@@ -375,9 +395,7 @@ if page == "Dashboard":
 # --- PAGE: ACTIVE LITERATURE TRACKING ---
 elif page == "Active Literature Tracking":
     st.markdown("## Active Literature Tracking for Recent Publications")
-    
-    # Updated academic description
-    st.markdown("This workspace is dedicated to supporting the scientific journey by bridging the gap between publication and synthesis. It provides a focused environment for monitoring the latest literature, organizing discoveries, and documenting the evolution of research insights. By reducing logistical complexities and optimizing the research process, the platform facilitates the seamless integration of emerging scientific developments into daily academic practice.")
+    st.markdown("Automated monitoring of relevant publications from the last 48 hours.")
     
     st.info("Can't access the full text? Visit [Sci-Hub](https://sci-hub.se/) and paste the title of the article.")
 
@@ -395,12 +413,11 @@ elif page == "Active Literature Tracking":
         if st.session_state.keywords:
             st.caption("Active Filters:")
             
-            # --- FIXED: Use Flexbox instead of st.columns to prevent text cutoff ---
-            # This creates a flexible container where tags grow to fit the text
-            st.markdown('<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">', unsafe_allow_html=True)
+            # Open the horizontal flexible container
+            st.markdown('<div class="tag-container">', unsafe_allow_html=True)
             
             for kw in st.session_state.keywords:
-                # Wrap each button in the tag-btn div for CSS styling
+                # Wrap each button in a tag-btn div
                 st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
                 if st.button(f"{kw} ✖", key=f"del_trk_{kw}"):
                     st.session_state.keywords.remove(kw)
@@ -408,9 +425,10 @@ elif page == "Active Literature Tracking":
                     supabase.table('users').update({'keywords': kw_str}).eq('email', email).execute()
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True) # Close Flex container
-            
+                
+            # Close the container
+            st.markdown('</div>', unsafe_allow_html=True)
+
     # Strictly limit to 2 days
     recent = get_summaries(st.session_state.keywords, "", days=2)
     
