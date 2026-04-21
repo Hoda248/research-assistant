@@ -29,63 +29,67 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 3. UPDATED CSS: LIGHT BLUE THEME & HORIZONTAL TAGS ---
+# --- 3. CUSTOM CSS: SAGE GREEN THEME & DYNAMIC TAG FIX ---
 st.markdown("""
 <style>
-    /* Global Font & Background settings */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+    /* Global Theme Styles */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif !important;
-        background-color: #FDFBF7 !important; /* Cream Background */
+        background-color: #F8FAF8 !important; 
+        color: #2D3A33 !important;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Lora', serif !important;
+        color: #3E5A4B !important; 
+        font-weight: 500 !important;
     }
 
-    /* KEYWORD TAGS: Light Blue Theme, Horizontal Flow, No Cutoff */
-    .tag-container {
-        display: flex !important;
-        flex-wrap: wrap !important;
-        gap: 10px !important;
-        margin-bottom: 20px !important;
+    /* Main Navigation Buttons (Sage Green) */
+    div.stButton > button {
+        border-radius: 4px !important;
+        font-weight: 600 !important;
+        background-color: #608F79 !important; 
+        color: #FFFFFF !important;
+        border: none !important;
+        padding: 0.5rem 1rem !important;
+    }
+    
+    div.stButton > button:hover {
+        background-color: #4A6B58 !important;
+        color: #FFFFFF !important;
     }
 
-    .tag-btn {
-        display: inline-block !important;
-    }
-
+    /* FINAL FIX: Dynamic Keyword Tags - Forces horizontal growth and prevents cutoff */
     .tag-btn div[data-testid="stButton"] {
-        display: inline-block !important;
         width: auto !important;
+        display: inline-flex !important;
+        flex-shrink: 0 !important;
     }
     
     .tag-btn div[data-testid="stButton"] > button {
-        /* Design Settings (Light Blue & Navy) */
-        background-color: #E0F2FE !important; /* Light Sky Blue */
-        color: #1A2A6C !important; /* Navy Blue Text */
-        border: 1px solid #1A2A6C !important; /* Navy Border */
-        border-radius: 20px !important;
+        width: auto !important;
+        min-width: max-content !important; /* Forces box to match word length */
+        max-width: none !important;
+        white-space: nowrap !important; /* Prevents text from wrapping to 2nd line */
+        word-break: keep-all !important; 
         padding: 0.4rem 1.2rem !important;
-        
-        /* Layout Settings (Fixing the Cutoff & Wrapping) */
-        width: max-content !important;
-        min-width: max-content !important;
-        white-space: nowrap !important; /* Keeps text on one line */
-        word-break: keep-all !important;
-        overflow: visible !important;
-        display: flex !important;
-        align-items: center !important;
-    }
-
-    .tag-btn div[data-testid="stButton"] > button:hover {
-        background-color: #EF4444 !important; /* Red on hover for deletion */
-        color: #FFFFFF !important;
-        border-color: #EF4444 !important;
+        border-radius: 20px !important;
+        background-color: #EAF2EB !important;
+        color: #3E5A4B !important;
+        border: 1px solid #8EB69B !important;
+        display: block !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. GLOBAL HEADER (NAVY THEME) ---
+# --- 4. GLOBAL HEADER ---
 st.markdown(f"""
     <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 style="font-family: 'Lora', serif; color: #1A2A6C; font-size: 2.8rem; font-weight: 600;">My Research Assistant</h1>
-        <hr style="border: 0; height: 1.5px; background-color: #1A2A6C; max-width: 50%; margin: auto; opacity: 0.6;">
+        <h1 style="font-size: 2.8rem;">My Research Assistant</h1>
+        <hr style="border: 0; height: 1px; background-color: #8EB69B; max-width: 50%; margin: auto;">
     </div>
 """, unsafe_allow_html=True)
 
