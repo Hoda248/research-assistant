@@ -93,9 +93,9 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# --- 5. LOGGED-IN NAVIGATION & IDENTITY (Fixes NameError: is_admin) ---
+# --- 5. TOP NAVIGATION BAR & ROUTING LOGIC ---
 if st.session_state.logged_in:
-    # Initialize admin status globally within the session
+    # Initialize admin status
     is_admin = False
     email_raw = st.session_state.get("user_email", "")
     if email_raw and "ADMIN_EMAIL" in st.secrets:
@@ -103,12 +103,20 @@ if st.session_state.logged_in:
             is_admin = True
             st.session_state.role = "admin"
 
-    # Define Navigation Options (Ensuring 'Reading Room' and 'My Notebook' exist)
-    nav_options = ["Dashboard", "Active Tracking", "Literature Discovery", "Reading Room", "My Notebook", "User Guide", "Settings"]
+    # Define Navigation Options with the new name for Active Tracking
+    nav_options = [
+        "Dashboard", 
+        "Active Literature Tracking", # Updated name
+        "Literature Discovery", 
+        "Reading Room", 
+        "My Notebook", 
+        "User Guide", 
+        "Settings"
+    ]
     if is_admin:
         nav_options.append("Admin Console")
 
-    # Render top navigation bar
+    # Render navigation buttons
     nav_cols = st.columns(len(nav_options))
     for i, option in enumerate(nav_options):
         with nav_cols[i]:
@@ -116,31 +124,33 @@ if st.session_state.logged_in:
                 st.session_state.current_page = option
                 st.rerun()
 
-    # --- PAGE ROUTING LOGIC ---
+    # --- PAGE ROUTING ---
+    # Get the current selected page from session state
     current_page = st.session_state.current_page
 
+    # Logic to display page content based on selection
     if current_page == "Dashboard":
-        # Call your Dashboard function/logic here
+        # Ensure your dashboard function is called here
         pass
         
-    elif current_page == "Active Tracking":
-        # Call Active Tracking logic
+    elif current_page == "Active Literature Tracking":
+        # IMPORTANT: This must match the name in nav_options exactly
+        # If your function was called 'active_tracking_page()', call it here.
         pass
 
     elif current_page == "Reading Room":
-        # RESTORED: Reading Room Logic
-        st.header("📖 Reading Room")
-        # Your reading room code...
+        # Removed the redundant st.header to fix double title issue
+        # Your reading room function/code goes here
+        pass
 
     elif current_page == "My Notebook":
-        # RESTORED: Notebook Logic (Matches your original data keys)
-        st.header("📓 My Notebook")
-        # Your notebook code...
+        # Removed the redundant st.header to fix double title issue
+        # Your notebook function/code goes here
+        pass
 
     elif current_page == "Admin Console" and is_admin:
-        # Secure Admin Access - is_admin is now correctly defined above
-        st.header("🛡️ Admin Console")
-        # Your admin code...
+        # Admin logic
+        pass
 
 # --- 6. HELPERS FOR UNIVERSITY ACCESS ---
 def get_access_links(original_url):
