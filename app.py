@@ -29,58 +29,34 @@ for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-# --- 3. CUSTOM CSS: SAGE GREEN THEME & DYNAMIC TAG FIX ---
+# --- 3. UPDATED CSS: FORCE SINGLE-LINE KEYWORD TAGS ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+    /* ... (keep your existing font/background settings) ... */
 
-    /* Global Theme Styles */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif !important;
-        background-color: #F8FAF8 !important; 
-        color: #2D3A33 !important;
-    }
-    
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Lora', serif !important;
-        color: #3E5A4B !important; 
-        font-weight: 500 !important;
+    /* KEYWORD TAGS: Force horizontal growth and prevent line breaks */
+    .tag-btn {
+        display: inline-block !important; /* Prevents the container from limiting width */
+        width: max-content !important;
     }
 
-    /* Main Navigation Buttons (Sage Green) */
-    div.stButton > button {
-        border-radius: 4px !important;
-        font-weight: 600 !important;
-        background-color: #608F79 !important; 
-        color: #FFFFFF !important;
-        border: none !important;
-        padding: 0.5rem 1rem !important;
-    }
-    
-    div.stButton > button:hover {
-        background-color: #4A6B58 !important;
-        color: #FFFFFF !important;
-    }
-
-    /* FINAL FIX: Dynamic Keyword Tags - Forces horizontal growth and prevents cutoff */
     .tag-btn div[data-testid="stButton"] {
-        width: auto !important;
-        display: inline-flex !important;
-        flex-shrink: 0 !important;
+        width: max-content !important;
+        display: inline-block !important;
     }
     
     .tag-btn div[data-testid="stButton"] > button {
-        width: auto !important;
-        min-width: max-content !important; /* Forces box to match word length */
-        max-width: none !important;
-        white-space: nowrap !important; /* Prevents text from wrapping to 2nd line */
+        width: max-content !important; /* Force button to match text width */
+        min-width: max-content !important; 
+        white-space: nowrap !important; /* Strictly prevents the word from splitting */
         word-break: keep-all !important; 
+        overflow: visible !important;
+        
         padding: 0.4rem 1.2rem !important;
         border-radius: 20px !important;
         background-color: #EAF2EB !important;
         color: #3E5A4B !important;
         border: 1px solid #8EB69B !important;
-        display: block !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -399,7 +375,9 @@ if page == "Dashboard":
 # --- PAGE: ACTIVE LITERATURE TRACKING ---
 elif page == "Active Literature Tracking":
     st.markdown("## Active Literature Tracking for Recent Publications")
-    st.markdown("Automated monitoring of relevant publications from the last 48 hours.")
+    
+    # Updated academic description
+    st.markdown("This workspace is dedicated to supporting the scientific journey by bridging the gap between publication and synthesis. It provides a focused environment for monitoring the latest literature, organizing discoveries, and documenting the evolution of research insights. By reducing logistical complexities and optimizing the research process, the platform facilitates the seamless integration of emerging scientific developments into daily academic practice.")
     
     st.info("Can't access the full text? Visit [Sci-Hub](https://sci-hub.se/) and paste the title of the article.")
 
@@ -416,20 +394,23 @@ elif page == "Active Literature Tracking":
 
         if st.session_state.keywords:
             st.caption("Active Filters:")
-            cols_per_row = 8
-            for i, kw in enumerate(st.session_state.keywords):
-                col_idx = i % cols_per_row
-                if col_idx == 0:
-                    c_row = st.columns(cols_per_row)
-                with c_row[col_idx]:
-                    st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
-                    if st.button(f"{kw} ✖", key=f"del_trk_{kw}"):
-                        st.session_state.keywords.remove(kw)
-                        kw_str = ",".join(st.session_state.keywords)
-                        supabase.table('users').update({'keywords': kw_str}).eq('email', email).execute()
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-
+            
+            # --- FIXED: Use Flexbox instead of st.columns to prevent text cutoff ---
+            # This creates a flexible container where tags grow to fit the text
+            st.markdown('<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">', unsafe_allow_html=True)
+            
+            for kw in st.session_state.keywords:
+                # Wrap each button in the tag-btn div for CSS styling
+                st.markdown('<div class="tag-btn">', unsafe_allow_html=True)
+                if st.button(f"{kw} ✖", key=f"del_trk_{kw}"):
+                    st.session_state.keywords.remove(kw)
+                    kw_str = ",".join(st.session_state.keywords)
+                    supabase.table('users').update({'keywords': kw_str}).eq('email', email).execute()
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True) # Close Flex container
+            
     # Strictly limit to 2 days
     recent = get_summaries(st.session_state.keywords, "", days=2)
     
@@ -661,10 +642,11 @@ elif page == "My Notebook":
 
 # --- PAGE: USER GUIDE ---
 elif page == "User Guide":
-    st.markdown("## User Guide")
+    st.markdown("## Welcome to My Research Assistant!")
     st.markdown("""
-    Welcome to the **Research Assistant Workstation**. This platform is designed to streamline your literature review and synthesis workflow.
-
+    This workspace is dedicated to supporting the scientific journey by bridging the gap between publication and synthesis. It provides a focused environment for monitoring the latest literature, organizing discoveries, and documenting the evolution of research insights.
+    By reducing logistical complexities and optimizing the research process, the platform facilitates the seamless integration of emerging scientific developments into daily academic practice.
+    
     ### 1. Dashboard
     View your active metrics like tracked keywords, saved papers, and total independent ideas.
 
